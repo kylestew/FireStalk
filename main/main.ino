@@ -6,6 +6,7 @@
 #define ARM_MATH_CM4
 #include <arm_math.h>
 #include <FastLED.h>
+#include "RingCoder.h"
 
 #define SERIAL_DEBUG    true
 
@@ -18,44 +19,27 @@ const int PIXEL_COUNT = 1;
 CRGB pixels[PIXEL_COUNT];
 int brightness = 32;
 
-
-
-
 /* Ring Encoder */
-// encoder with RGB LED
-const int ENCB = 2;
-const int ENCA = 3;
-// const int LEDR = 5; // PWM enabled LED driver
-// const int LEDB = 6; // PWM enabled LED driver
-// const int LEDG = 9; // PWM enabled LED driver
-const int ENC_SW = 7;
-
+// (pins fill left
+const int ENCB = 0; // All pins interrupt on Teensy
+const int ENCA = 1;
+const int ENC_SW = 2;
+const int LEDR = 3; // (not enabled)
+const int LEDB = 3; // PWM enabled LED driver
+const int LEDG = 4; // PWM enabled LED driver
 // ring led shift register
-// const int DAT = 8;
-// const int CLR = 10;
-// const int CLK = 11;
-// const int LATCH = 12;
-// const int EN = 13;
+const int DAT = 5;
+const int CLR = 9;
+const int CLK = 10;
+const int LATCH = 11;
+const int EN = 12;
+RingCoder ringcoder = RingCoder(ENCB, ENCA, LEDR, LEDB, LEDG, ENC_SW, DAT, CLR, CLK, LATCH, EN);
 
-// globals
-//int switchValue = 0;
-
-// enum ledCounter {RED = 0, BLUE = 1, GREEN = 2, NONE = 3};
-// byte ledValue[3] = {255, 255, 255};
-// byte ledPins[3] = {LEDR, LEDB, LEDG};
-
-volatile int lastEncoded = 0;
-volatile long encoderValue = 0;
-
-// long lastencoderValue = 0;
-//
-// int lastMSB = 0;
-// int lastLSB = 0;
-
-
-
-
-
+/* Mode */
+int mode = 0;   // 0 == set animation program
+                // 1 == set LED brightness
+const int ANIMATION_COUNT = 3; // number of animations implemented
+int animationProgram = 0;
 
 /* Audio FFT Sampling */
 const int AUDIO_INPUT_PIN = 14;
@@ -94,8 +78,12 @@ void setup() {
   FastLED.setBrightness(brightness);
   clearPixels();
 
-  // ring encoder
-  setupRingEncoder();
+  // boot animation on ring coder
+  ringcoder.setKnobRgb(255, 255, 255);
+  ringcoder.spin();
+  ringcoder.reverse_spin();
+  setMode(0);
+
 
   // ADC -> FFT input
   // pinMode(AUDIO_INPUT_PIN, INPUT);
@@ -105,46 +93,27 @@ void setup() {
 }
 
 void loop() {
+  // DON'T BLOCK MAIN LOOP
+  // ring coder is a polling input
 
-//   /*
-// int newSwitchValue = digitalRead(SW);
-// if (switchValue != newSwitchValue) {
-//   switchValue = newSwitchValue;
-//
-//   if (switchValue)
-//     shiftOut16(0xffff);
-//   else
-//     shiftOut16(0x0000);
-// }
-// */
-//
-//
-//
-//  Serial.println(-1 * (encoderValue / 4));
-// delay(20); //just here to slow down the output, and show it will work  even during a delay
-//
-//
-// uint16_t ledRingValue = -1 * (encoderValue / 4);
-// writeToShiftRegister(ledRingValue);
-//
-//
-// // update LED states
-// analogWrite(LEDR, ledValue[0]); // r
-// analogWrite(LEDB, ledValue[1]); // b
-// analogWrite(LEDG, ledValue[2]); // g
-// ledValue[0] = ledValue[0] - 1;
-// ledValue[1] = ledValue[1] - 3;
-// ledValue[2] = ledValue[2] - 6;
-//
-//
-// /*
-// // animate the ring
-// for(uint16_t i = 0; i < 65,535; ) {
-//   writeToShiftRegister(i);
-//   delay(500);
-//   i = (i << 1) + 1; // moved LED over by 1
-// }
-// */
+  // watch for button changes
+  if (ringcoder.update() && ringcoder.button() == HIGH) {
+    // toggle mode
+    setMode(mode == 0 ? 1 : 0);
+  }
+
+  // update ring coder display
+  updateModeDisplay();
+
+
+
+
+  // TEMP output
+  setPixel(0, 255, 0, 255);
+  FastLED.show();
+
+
+
 
 
   /*
@@ -172,6 +141,36 @@ void loop() {
   */
 }
 
+// === MODES ===
+void setMode(int newMode) {
+  mode = newMode;
+  if (mode == 0) {
+    // BLUE mode - select animation
+    ringcoder.setEncoderRange(ANIMATION_COUNT);
+    ringcoder.writeEncoder(animationProgram / 2);
+    ringcoder.setKnobRgb(0, 0, 255);
+  }
+  else if (mode == 1) {
+    // GREEN mode - select brightness
+    ringcoder.setEncoderRange(128);
+    ringcoder.writeEncoder(brightness * 2);
+    ringcoder.setKnobRgb(0, 255, 0);
+  }
+}
+
+void updateModeDisplay() {
+  int pos = ringcoder.readEncoder();
+  if (mode == 0) {
+    animationProgram = pos;
+  } else {
+    brightness = pos;
+    FastLED.setBrightness(brightness);
+  }
+  ringcoder.ledRingFollower();
+}
+
+
+
 
 // === PIXELS ===
 void clearPixels() {
@@ -180,14 +179,14 @@ void clearPixels() {
   FastLED.clear();
 }
 
-/*
 // skips fade - sets pixel buffer directly
 void setPixel(int i, int r, int g, int b) {
-  pixBuffer[i].r = pixels[i].r = r;
-  pixBuffer[i].g = pixels[i].g = g;
-  pixBuffer[i].b = pixels[i].b = b;
+  pixels[i].r = r;
+  pixels[i].g = g;
+  pixels[i].b = b;
 }
 
+/*
 // hue is angle from 0 to 365
 void setPixelHSV(int i, int h, byte s, byte v) {
   pixBuffer[i] = pixels[i] = CHSV(h, s, v);
@@ -209,89 +208,6 @@ void showStatus(int r, int g, int b) {
 }
 */
 
-
-// === Ring Encoder ===
-void setupRingEncoder() {
-  pinMode(ENCA, INPUT);
-  digitalWrite(ENCA, HIGH); // pull up input
-  pinMode(ENCB, INPUT);
-  digitalWrite(ENCB, HIGH);
-  noInterrupts(); // let setup finish before firing interrupts
-
-  // TODO: a little iffy on INT pin #s
-  attachInterrupt(2, readEncoder, CHANGE);
-  attachInterrupt(3, readEncoder, CHANGE);
-
-  // encoder RGB
-  // pinMode(LEDR, OUTPUT);
-  // analogWrite(LEDR, ledValue[RED]);
-  // pinMode(LEDG, OUTPUT);
-  // analogWrite(LEDR, ledValue[GREEN]);
-  // pinMode(LEDB, OUTPUT);
-  // analogWrite(LEDR, ledValue[BLUE]);
-
-  // encoder SW
-  pinMode(ENC_SW, INPUT);
-  digitalWrite(ENC_SW, LOW); // disable internal pull-up
-
-  // // setup ring led shift register
-  // pinMode(EN, OUTPUT); // stays low to enable outputs
-  // digitalWrite(EN, LOW);
-  // pinMode(LATCH, OUTPUT);
-  // digitalWrite(LATCH, LOW);
-  // pinMode(CLK, OUTPUT);
-  // digitalWrite(CLK, LOW);
-  // pinMode(CLR, OUTPUT);
-  // digitalWrite(CLR, HIGH); // disable master clear
-  // pinMode(DAT, OUTPUT);
-  // digitalWrite(DAT, LOW); // set ser low
-  //
-  //
-  // // turn off ring led
-  // writeToShiftRegister(0x0000);
-
-  // listen for changes on encoder
-  interrupts();
-}
-
-
-
-// called whenever A or B pins (INT0 or INT1) are toggled
-void readEncoder() {
-  int MSB = digitalRead(ENCB); //MSB = most significant bit
-  int LSB = digitalRead(ENCA); //LSB = least significant bit
-
-  int encoded = (MSB << 1) |LSB; //converting the 2 pin value to single number
-  int sum  = (lastEncoded << 2) | encoded; //adding it to the previous encoded value
-
-  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoderValue ++;
-  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoderValue --;
-
-  lastEncoded = encoded; //store this value for next time
-
-  Serial.println(lastEncoded);
-}
-
-
-/* Write output to shift registers driving LED ring */
-void writeToShiftRegister(uint16_t data) {
-  // digitalWrite(LATCH, LOW);
-  //
-  // // Sending to two shift registers, need to break into parts
-  // byte datamsb;
-  // byte datalsb;
-  //
-  // // Isolate the MSB and LSB
-  // datamsb = (data&0xFF00)>>8;  // mask out the MSB and shift it right 8 bits
-  // datalsb = data & 0xFF;  // Mask out the LSB
-  //
-  // // First shift out the MSB, MSB first.
-  // shiftOut(DAT, CLK, MSBFIRST, datamsb);
-  // // Then shift out the LSB
-  // shiftOut(DAT, CLK, MSBFIRST, datalsb);
-  //
-  // digitalWrite(LATCH, HIGH);
-}
 
 
 
@@ -403,5 +319,9 @@ float lerp(float start, float end, float percent) {
 
 // float capable MAP
 float map(float value, float istart, float istop, float ostart, float ostop) {
+  return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
+}
+
+int map(int value, int istart, int istop, int ostart, int ostop) {
   return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
 }
