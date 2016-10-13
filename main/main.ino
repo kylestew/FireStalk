@@ -153,7 +153,7 @@ void setMode(int newMode) {
   else if (mode == 1) {
     // GREEN mode - select brightness
     ringcoder.setEncoderRange(128);
-    ringcoder.writeEncoder(brightness * 2);
+    ringcoder.writeEncoder(brightness / 4);
     ringcoder.setKnobRgb(0, 255, 0);
   }
 }
@@ -163,7 +163,7 @@ void updateModeDisplay() {
   if (mode == 0) {
     animationProgram = pos;
   } else {
-    brightness = pos;
+    brightness = pos * 4;
     FastLED.setBrightness(brightness);
   }
   ringcoder.ledRingFollower();
