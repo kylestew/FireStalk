@@ -1,7 +1,7 @@
 /*
- * Burn
+ * Burn Stick
  * =============
- * LED based #IXArt platform
+ * LED based #IXArt
  */
 #define ARM_MATH_CM4
 #include <arm_math.h>
@@ -38,8 +38,9 @@ RingCoder ringcoder = RingCoder(ENCB, ENCA, LEDR, LEDB, LEDG, ENC_SW, DAT, CLR, 
 /* Mode */
 int mode = 0;   // 0 == set animation program
                 // 1 == set LED brightness
-const int ANIMATION_COUNT = 3; // number of animations implemented
+const int ANIMATION_COUNT = 2; // number of animations implemented
 int animationProgram = 0;
+const int ANIMATION_DELAY_MS = 8; // almost 120 FPS
 
 /* Audio FFT Sampling */
 const int AUDIO_INPUT_PIN = 14;
@@ -50,14 +51,15 @@ const int SAMPLE_RATE_HZ = 9000;         // Sample rate of the audio in hertz
 IntervalTimer samplingTimer;
 int sampleCounter = 0;
 float samples[FFT_SIZE*2];
+bool runFFTSampling = false;
 
 /* FFT Processing */
 float magnitudes[FFT_SIZE];
-// const int BAND_START = 40.0;             // start of freq sample band
-// const int BAND_END = 920.0;              // end of freq sample band
+const int BAND_START = 40.0;             // start of freq sample band
+const int BAND_END = 920.0;              // end of freq sample band
 // float GAIN = 3.0;                        // increase the color volume
-// float LERP_DOWN = 0.09;                       // smooth out responsiveness
-// float LERP_UP = 0.7;                       // smooth out responsiveness
+// float LERP_DOWN = 0.09;                  // smooth out responsiveness
+// float LERP_UP = 0.7;                     // smooth out responsiveness
 // float HUE_SHIFT = 40.0;                  // shift hue based on intensity
 // float SPECTRUM_MIN_DB = 45.0;            // Audio intensity (in decibels) that maps to low LED brightness.
 // float SPECTRUM_MAX_DB = 95.0;            // Audio intensity (in decibels) that maps to high LED brightness.
@@ -74,7 +76,8 @@ void setup() {
   digitalWrite(STATUS_LED, LOW);
 
   // initialze Pixels
-  FastLED.addLeds<NEOPIXEL, PIXEL_PIN>(pixels, PIXEL_COUNT);
+  // FastLED.addLeds<NEOPIXEL, PIXEL_PIN>(pixels, PIXEL_COUNT);
+  FastLED.addLeds<WS2811, PIXEL_PIN, GRB>(pixels, PIXEL_COUNT);
   FastLED.setBrightness(brightness);
   clearPixels();
 
@@ -84,12 +87,14 @@ void setup() {
   ringcoder.reverse_spin();
   setMode(0);
 
+  // select inital animation
+  switchAnimation(0);
 
   // ADC -> FFT input
-  // pinMode(AUDIO_INPUT_PIN, INPUT);
-  // analogReadResolution(ANALOG_READ_RESOLUTION);
-  // analogReadAveraging(ANALOG_READ_AVERAGING);
-  // samplingBegin();
+  pinMode(AUDIO_INPUT_PIN, INPUT);
+  analogReadResolution(ANALOG_READ_RESOLUTION);
+  analogReadAveraging(ANALOG_READ_AVERAGING);
+  samplingBegin();
 }
 
 void loop() {
@@ -105,18 +110,6 @@ void loop() {
   // update ring coder display
   updateModeDisplay();
 
-
-
-
-  // TEMP output
-  setPixel(0, 255, 0, 255);
-  FastLED.show();
-
-
-
-
-
-  /*
   // Calculate FFT if a full sample is available.
   if (samplingIsDone()) {
     // Run FFT on sample data.
@@ -129,16 +122,70 @@ void loop() {
     // display
     sampleIntensity();
 
-    // Restart audio sampling.
-    samplingBegin();
+    // Restart audio sampling if we still need it
+    if (runFFTSampling)
+      samplingBegin();
   }
 
-  // rotate hue
-  // hue += 0.008;
-  // if (hue > 360) hue -= 360;
+  stepAnimation();
+  FastLED.delay(ANIMATION_DELAY_MS);
+}
 
-  // updatePixleStates();
-  */
+// === ANIMATIONS ===
+enum Animation {
+  responsiveFFT,
+  simpleHueShift,
+};
+
+float audioIntensity = 0.0;
+float hue = 0.0;
+
+void switchAnimation(int pos) {
+  animationProgram = pos;
+
+  switch(animationProgram) {
+    case responsiveFFT:
+      runFFTSampling = true;
+      audioIntensity = 0.0;
+      hue = 0.0;
+      break;
+
+    case simpleHueShift:
+      runFFTSampling = false;
+      hue = 0.0;
+      break;
+  }
+
+  if (runFFTSampling)
+    samplingBegin();
+}
+
+void stepAnimation() {
+  switch(animationProgram) {
+    case responsiveFFT:
+
+      // rotate hue
+      hue += 0.4;
+      if (hue > 360) hue -= 360;
+
+      // output with intensity
+      pixels[0] = CHSV(hue, 255, map(audioIntensity, 0.0, 60.0, 0.0, 255.0));
+      FastLED.show();
+
+      break;
+
+    case simpleHueShift:
+
+      // rotate hue
+      hue += 0.8;
+      if (hue > 360) hue -= 360;
+
+      // output with intensity
+      pixels[0] = CHSV(hue, 255, 255);
+      FastLED.show();
+
+      break;
+  }
 }
 
 // === MODES ===
@@ -161,15 +208,15 @@ void setMode(int newMode) {
 void updateModeDisplay() {
   int pos = ringcoder.readEncoder();
   if (mode == 0) {
-    animationProgram = pos;
+    if (animationProgram != pos) {
+      switchAnimation(pos);
+    }
   } else {
     brightness = pos * 4;
     FastLED.setBrightness(brightness);
   }
   ringcoder.ledRingFollower();
 }
-
-
 
 
 // === PIXELS ===
@@ -187,11 +234,6 @@ void setPixel(int i, int r, int g, int b) {
 }
 
 /*
-// hue is angle from 0 to 365
-void setPixelHSV(int i, int h, byte s, byte v) {
-  pixBuffer[i] = pixels[i] = CHSV(h, s, v);
-}
-
 // maps an angle (0 to inf) to a color using SIN and offsets
 void setPixelAngle(int i, float angle) {
   // angles are in rads - distribute around 2*PI
@@ -209,11 +251,7 @@ void showStatus(int r, int g, int b) {
 */
 
 
-
-
-
-
-// === Audio FFT Sampling ===
+// === Audio Sampling ===
 void samplingBegin() {
   // Reset sample buffer position and start callback at necessary rate
   sampleCounter = 0;
@@ -221,8 +259,6 @@ void samplingBegin() {
 }
 
 void samplingCallback() {
-  // TODO: WTF is happening here!?!?!?
-
   // Interrupt everything to grab a sample - fill the buffer - and disable interrupts
   // Read from the ADC and store the sample data
   samples[sampleCounter] = (float32_t)analogRead(AUDIO_INPUT_PIN);
@@ -240,25 +276,24 @@ boolean samplingIsDone() {
   return sampleCounter >= FFT_SIZE*2;
 }
 
-void sampleIntensity() {
-  // TODO: WTF is happening here!?!?!?
 
-/*
-  float intensity, otherMean;
+// === FFT Processing ===
+void sampleIntensity() {
+  float otherMean;
   // grab average of frequency band
   windowMean(magnitudes,
              frequencyToBin(BAND_START),
              frequencyToBin(BAND_END),
-             &intensity,
+             &audioIntensity,
              &otherMean);
   // convert intensity to decibels.
-  intensity = 20.0*log10(intensity);
+  audioIntensity = 20.0*log10(audioIntensity);
   // boost signals that stand out
   // otherMean = 20.0*log10(otherMean);
   // if (intensity > otherMean) {
   //   intensity += (intensity - otherMean) * BAND_ISOLATION;
   // }
-
+/*
   // map to intensity values (clamp 0-1)
   intensity = constrain(map(intensity, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, -0.2, 1.0*GAIN), 0.0, 1.0);
   // smooth out transitions (only in desc direction)

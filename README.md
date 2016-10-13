@@ -1,9 +1,10 @@
 # BurnStick
 
 TODO:
++ Bring FFT online with basic audio response
+
 + Figure out how to wire up level shifter
 + Bring 64 LED grid online
-+ Bring FFT online with basic audio response
 + Prototype some animations
 
 Notes:
