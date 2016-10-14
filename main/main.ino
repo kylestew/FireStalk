@@ -14,9 +14,11 @@
 const int STATUS_LED = 13;
 
 /* Pixels */
-const int PIXEL_PIN = 6;
-const int PIXEL_COUNT = 1;
+const int PIXEL_STRAND_0 = 11;
+const int PIXEL_STRAND_1 = 12;
+const int PIXEL_COUNT = 64;
 CRGB pixels[PIXEL_COUNT];
+CRGB pixels1[PIXEL_COUNT];
 int brightness = 32;
 
 /* Ring Encoder */
@@ -25,14 +27,14 @@ const int ENCB = 0; // All pins interrupt on Teensy
 const int ENCA = 1;
 const int ENC_SW = 2;
 const int LEDR = 3; // (not enabled)
-const int LEDB = 3; // PWM enabled LED driver
-const int LEDG = 4; // PWM enabled LED driver
+const int LEDB = 4; // PWM enabled LED driver
+const int LEDG = 5; // PWM enabled LED driver
 // ring led shift register
-const int DAT = 5;
-const int CLR = 9;
-const int CLK = 10;
-const int LATCH = 11;
-const int EN = 12;
+const int DAT = 6;
+const int CLR = 7;
+const int CLK = 8;
+const int LATCH = 9;
+const int EN = 10;
 RingCoder ringcoder = RingCoder(ENCB, ENCA, LEDR, LEDB, LEDG, ENC_SW, DAT, CLR, CLK, LATCH, EN);
 
 /* Mode */
@@ -76,8 +78,8 @@ void setup() {
   digitalWrite(STATUS_LED, LOW);
 
   // initialze Pixels
-  // FastLED.addLeds<NEOPIXEL, PIXEL_PIN>(pixels, PIXEL_COUNT);
-  FastLED.addLeds<WS2811, PIXEL_PIN, GRB>(pixels, PIXEL_COUNT);
+  FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_0>(pixels, PIXEL_COUNT);
+  // TODO: bring 2 strands online
   FastLED.setBrightness(brightness);
   clearPixels();
 
@@ -169,7 +171,7 @@ void stepAnimation() {
       if (hue > 360) hue -= 360;
 
       // output with intensity
-      pixels[0] = CHSV(hue, 255, map(audioIntensity, 0.0, 60.0, 0.0, 255.0));
+      fill_solid(&(pixels[0]), PIXEL_COUNT, CHSV(hue, 255, map(audioIntensity, 0.0, 60.0, 0.0, 255.0)));
       FastLED.show();
 
       break;
@@ -181,7 +183,7 @@ void stepAnimation() {
       if (hue > 360) hue -= 360;
 
       // output with intensity
-      pixels[0] = CHSV(hue, 255, 255);
+      fill_solid(&(pixels[0]), PIXEL_COUNT, CHSV(hue, 255, 255));
       FastLED.show();
 
       break;
