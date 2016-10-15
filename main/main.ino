@@ -46,22 +46,20 @@ int animationProgram = 0;
 const int ANIMATION_DELAY_MS = 8; // almost 120 FPS
 
 /* Audio FFT Sampling */
+bool runFFTSampling = false;
 const int AUDIO_INPUT_PIN = 14;
 const int ANALOG_READ_RESOLUTION = 10;   // Bits of resolution for the ADC.
 const int ANALOG_READ_AVERAGING = 16;    // Number of samples to average with each ADC reading.
 const int FFT_SIZE = 256;                // Size of the FFT.  Realistically can only be at most 256
-// const int SAMPLE_RATE_HZ = 9000;         // Sample rate of the audio in hertz
-
-
-const int SAMPLE_RATE_HZ = 1;         // Sample rate of the audio in hertz
-
+const int SAMPLE_RATE_HZ = 9000;         // Sample rate of the audio in hertz
 IntervalTimer samplingTimer;
 int sampleCounter = 0;
 float samples[FFT_SIZE*2];
-bool runFFTSampling = false;
+float magnitudes[FFT_SIZE];
+
+
 
 /* FFT Processing */
-float magnitudes[FFT_SIZE];
 const int BAND_START = 40.0;             // start of freq sample band
 const int BAND_END = 920.0;              // end of freq sample band
 // float GAIN = 3.0;                        // increase the color volume
@@ -119,23 +117,31 @@ void loop() {
   updateModeDisplay();
 
   // Calculate FFT if a full sample is available.
-  /*
-  if (samplingIsDone()) {
+  if (isSamplingDone()) {
     // Run FFT on sample data.
     arm_cfft_radix4_instance_f32 fft_inst;
     arm_cfft_radix4_init_f32(&fft_inst, FFT_SIZE, 0, 1);
     arm_cfft_radix4_f32(&fft_inst, samples);
-    // Calculate magnitude of complex numbers output by the FFT.
+    // calculate magnitude of complex numbers output by the FFT.
     arm_cmplx_mag_f32(samples, magnitudes, FFT_SIZE);
 
-    // display
-    sampleIntensity();
+
+    // TEMP: spit up current values to serial port
+    // samples
+    for (int i = 0; i < FFT_SIZE; i++) {
+      Serial.print(magnitudes[i]);
+      Serial.print(" ");
+    }
+    Serial.println();
+
+    
+    // // display
+    // sampleIntensity();
 
     // Restart audio sampling if we still need it
     if (runFFTSampling)
       samplingBegin();
   }
-  */
 
   stepAnimation();
   FastLED.delay(ANIMATION_DELAY_MS);
@@ -282,7 +288,7 @@ void samplingCallback() {
   }
 }
 
-boolean samplingIsDone() {
+boolean isSamplingDone() {
   return sampleCounter >= FFT_SIZE*2;
 }
 
