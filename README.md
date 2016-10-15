@@ -1,5 +1,9 @@
 # BurnStick
 
+TODO:
++ Tune FFT
++ Generalize animation code
+
 Notes:
 + Aim for a 1m distance between power connections - you can wire power supply anywhere in the strand
 + Need a logic level shifter for 3.3 to 5V levels if you want high output LEDs

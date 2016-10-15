@@ -8,7 +8,7 @@
 #include <FastLED.h>
 #include "RingCoder.h"
 
-#define SERIAL_DEBUG    true
+#define SERIAL_DEBUG      false
 
 /* Status LED */
 const int STATUS_LED = 13;
@@ -17,7 +17,8 @@ const int STATUS_LED = 13;
 const int PIXEL_STRAND_0 = 11;
 const int PIXEL_STRAND_1 = 12;
 const int PIXEL_COUNT = 64;
-CRGB pixels[PIXEL_COUNT];
+// 2 x strands - mirrored
+CRGB pixels0[PIXEL_COUNT];
 CRGB pixels1[PIXEL_COUNT];
 int brightness = 32;
 
@@ -49,7 +50,11 @@ const int AUDIO_INPUT_PIN = 14;
 const int ANALOG_READ_RESOLUTION = 10;   // Bits of resolution for the ADC.
 const int ANALOG_READ_AVERAGING = 16;    // Number of samples to average with each ADC reading.
 const int FFT_SIZE = 256;                // Size of the FFT.  Realistically can only be at most 256
-const int SAMPLE_RATE_HZ = 9000;         // Sample rate of the audio in hertz
+// const int SAMPLE_RATE_HZ = 9000;         // Sample rate of the audio in hertz
+
+
+const int SAMPLE_RATE_HZ = 1;         // Sample rate of the audio in hertz
+
 IntervalTimer samplingTimer;
 int sampleCounter = 0;
 float samples[FFT_SIZE*2];
@@ -69,19 +74,20 @@ const int BAND_END = 920.0;              // end of freq sample band
 
 // === LIFECYCLE ===
 void setup() {
-  if (SERIAL_DEBUG) {
+  // TODO:
+  // if (SERIAL_DEBUG) {
     Serial.begin(115200);
-  }
+  // }
 
   // status LED
   pinMode(STATUS_LED, OUTPUT);
   digitalWrite(STATUS_LED, LOW);
 
   // initialze Pixels
-  FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_0>(pixels, PIXEL_COUNT);
+  // FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_0>(pixels, PIXEL_COUNT);
   // TODO: bring 2 strands online
-  FastLED.setBrightness(brightness);
-  clearPixels();
+  // FastLED.setBrightness(brightness);
+  // clearPixels();
 
   // boot animation on ring coder
   ringcoder.setKnobRgb(255, 255, 255);
@@ -113,6 +119,7 @@ void loop() {
   updateModeDisplay();
 
   // Calculate FFT if a full sample is available.
+  /*
   if (samplingIsDone()) {
     // Run FFT on sample data.
     arm_cfft_radix4_instance_f32 fft_inst;
@@ -128,6 +135,7 @@ void loop() {
     if (runFFTSampling)
       samplingBegin();
   }
+  */
 
   stepAnimation();
   FastLED.delay(ANIMATION_DELAY_MS);
@@ -171,8 +179,8 @@ void stepAnimation() {
       if (hue > 360) hue -= 360;
 
       // output with intensity
-      fill_solid(&(pixels[0]), PIXEL_COUNT, CHSV(hue, 255, map(audioIntensity, 0.0, 60.0, 0.0, 255.0)));
-      FastLED.show();
+      // fill_solid(&(pixels[0]), PIXEL_COUNT, CHSV(hue, 255, map(audioIntensity, 0.0, 60.0, 0.0, 255.0)));
+      // FastLED.show();
 
       break;
 
@@ -183,8 +191,8 @@ void stepAnimation() {
       if (hue > 360) hue -= 360;
 
       // output with intensity
-      fill_solid(&(pixels[0]), PIXEL_COUNT, CHSV(hue, 255, 255));
-      FastLED.show();
+      // fill_solid(&(pixels[0]), PIXEL_COUNT, CHSV(hue, 255, 255));
+      // FastLED.show();
 
       break;
   }
@@ -224,15 +232,15 @@ void updateModeDisplay() {
 // === PIXELS ===
 void clearPixels() {
   // clear out all buffers
-  fill_solid(&(pixels[0]), PIXEL_COUNT, CRGB(0, 0, 0));
-  FastLED.clear();
+  // fill_solid(&(pixels[0]), PIXEL_COUNT, CRGB(0, 0, 0));
+  // FastLED.clear();
 }
 
 // skips fade - sets pixel buffer directly
 void setPixel(int i, int r, int g, int b) {
-  pixels[i].r = r;
-  pixels[i].g = g;
-  pixels[i].b = b;
+  // pixels[i].r = r;
+  // pixels[i].g = g;
+  // pixels[i].b = b;
 }
 
 /*
