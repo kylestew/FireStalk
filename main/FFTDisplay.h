@@ -1,9 +1,9 @@
-#ifndef AudioTestAnimation_h
-#define AudioTestAnimation_h
+#ifndef FFTDisplay_h
+#define FFTDisplay_h
 
 #include "BasicAnimation.h"
 
-class AudioTestAnimation: public BasicAnimation {
+class FFTDisplay: public BasicAnimation {
 public:
     using BasicAnimation::BasicAnimation;
 

@@ -10,7 +10,7 @@ PImage spectrogram;
 int colors[] = new int[64*3];
 
 void setup () {
-  size(252, 820);
+  size(412, 700);
   println(Serial.list()[1]);
   serial = new Serial (this, Serial.list()[1], 115200);
   serial.bufferUntil('\n');
@@ -22,7 +22,7 @@ void setup () {
 
 int highIdx = 0;
 void draw() {
-  background(0);
+  background(22);
   
   // move the pixels down a row each frame
   spectrogram.copy(0, 0, bins, spectroHeight-1, 0, 1, bins, spectroHeight-1); 
@@ -30,26 +30,27 @@ void draw() {
   // update image
   spectrogram.loadPixels();
   colorMode(HSB, 360, 100, 100);
-  for (int i = 1; i < magnitudes.length && i < bins; i++) {
+  for (int i = 0; i < magnitudes.length && i < bins; i++) {
     // draw into spectrogram - first row of pixels
     if (magnitudes[0] > 1.0)
-    spectrogram.pixels[i-1] = color(0, 0, 100);
+      spectrogram.pixels[i] = color(0, 100, 100);
     else
-    spectrogram.pixels[i-1] = color(map(magnitudes[i], 0, 1, 240, 0), 100, 100);
+      spectrogram.pixels[i] = color(map(magnitudes[i], 0, 1, 240, 0), 100, 100);
   }
   spectrogram.updatePixels();
   
-  image(spectrogram, 64, 28, bins*2, bins*4);
+  image(spectrogram, 80, 32, bins*4, bins*8);
   
   // display strand colors
   translate(32, 32);
-  colorMode(RGB, 255, 255, 255);
+  colorMode(RGB, 128, 128, 128); // pop colors - I think they are low due to calibration
+  stroke(32);
   for (int i = 64*3-3; i > 0; i-=3) {
     fill(colors[i], colors[i+1], colors[i+2]);
     
-    ellipse(0, 0, 10, 10);
-    ellipse(192, 0, 10, 10);
-    translate(0, 12);
+    rect(0, 0, 30, 8);
+    rect(320, 0, 30, 8);
+    translate(0, 10);
   }
 }
 

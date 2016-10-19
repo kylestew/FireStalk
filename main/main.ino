@@ -8,7 +8,8 @@
 #include "Audio.h"
 
 #include "BasicAnimation.h"
-#include "AudioTestAnimation.h"
+#include "FFTDisplay.h"
+#include "VUMeter.h"
 
 
 #define SERIAL_DEBUG        true
@@ -44,12 +45,12 @@ float fftGain = 32.0;
 const int FFT_GAIN_MIN = 8;
 const int FFT_GAIN_MAX = 92;
 AudioInputAnalog        adc(A0);
-AudioAnalyzePeak        peak;
+AudioAnalyzeRMS         rms;
 AudioAnalyzeFFT1024     fft;
 AudioConnection         patchCord1(adc, fft);
-AudioConnection         patchCord2(adc, peak);
+AudioConnection         patchCord2(adc, rms);
 const int FREQUENCY_FILTER_RANGE = 64;
-float audioPeak = 0;
+double audioRMS = 0;
 float freqMagnitudes[FREQUENCY_FILTER_RANGE];
 
 /* Mode */
@@ -96,8 +97,8 @@ void setup() {
   fft.windowFunction(AudioWindowHanning1024);
 
   // create animations
-  animations[0] = new BasicAnimation(pixels, PIXEL_COUNT);
-  animations[1] = new AudioTestAnimation(pixels, PIXEL_COUNT);
+  animations[0] = new VUMeter(pixels, PIXEL_COUNT);
+  animations[1] = new FFTDisplay(pixels, PIXEL_COUNT);
 
   // set control mode
   setMode(0);
@@ -128,8 +129,9 @@ void loop() {
   fps = 0; // reset - fps variale automatically counts up
 
   // process new Peak value
-  if (peak.available()) {
-    audioPeak = peak.read();
+  if (rms.available()) {
+    // map values more evenly
+    audioRMS = constrain((log(rms.read()) / 6.0) + 1, 0.0, 1.0);
   }
 
   // process new FFT values
@@ -137,12 +139,12 @@ void loop() {
     // each bin is 43Hz - sample from 0Hz to 2752Hz (0 - 64)
     for (int i = 0; i < FREQUENCY_FILTER_RANGE; i++) {
       // normalize freq values across spectrum
-      freqMagnitudes[i] = fft.read(i) * (fftGain * log(i+1) + 1.0);
+      freqMagnitudes[i] = fft.read(i) * fftGain * (log(i+1) + 1.0);
     }
   }
 
   // animations set pixels
-  animations[currentAnimationIdx]->step(ellapsed, audioPeak, freqMagnitudes);
+  animations[currentAnimationIdx]->step(ellapsed, audioRMS, freqMagnitudes);
   FastLED.show();
 
   // output values for Processing prototype visualization

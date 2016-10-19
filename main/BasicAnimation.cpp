@@ -23,6 +23,6 @@ float BasicAnimation::map(float value, float istart, float istop, float ostart, 
   return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
 }
 
-// int map(int value, int istart, int istop, int ostart, int ostop) {
-//   return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
-// }
+int BasicAnimation::map(int value, int istart, int istop, int ostart, int ostop) {
+  return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
+}

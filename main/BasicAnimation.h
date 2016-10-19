@@ -15,6 +15,7 @@ class BasicAnimation {
     int _pixelCount;
 
     float map(float value, float istart, float istop, float ostart, float ostop);
+    int map(int value, int istart, int istop, int ostart, int ostop);
 };
 
 #endif
