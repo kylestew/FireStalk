@@ -1,11 +1,11 @@
 
 #include "RingCoder.h"
 #define UNCONNECTED_PIN 14
-RingCoder::RingCoder(int bPin, int aPin, 
-                     int redPin, int bluPin, int grnPin, 
-                     int swhPin, 
-                     int datPin, int clrPin, int clkPin, 
-                     int latchPin, int enPin) : 
+RingCoder::RingCoder(int bPin, int aPin,
+                     int redPin, int bluPin, int grnPin,
+                     int swhPin,
+                     int datPin, int clrPin, int clkPin,
+                     int latchPin, int enPin) :
   _latchPin(latchPin), _datPin(datPin), _clkPin(clkPin), _currentShift(0x0000), _range(LED_COUNT), _encoderPosition(0), _moved(false), _myEnc(bPin, aPin), _pushButton()
 
 {
@@ -107,9 +107,9 @@ void RingCoder::reverse_spin() {
   spin(true);
 }
 
-//Wheel of fortune like spinner.  
-//Will spin around 3 times and land on a random 
-//number of the 4th, moving progressively slower 
+//Wheel of fortune like spinner.
+//Will spin around 3 times and land on a random
+//number of the 4th, moving progressively slower
 //as it approaches the number.
 //The speed of the slowdown is controlled by the rotary encoder's initial state
 //This uses delays where it probably should use a combination "start" and "update"
@@ -201,7 +201,9 @@ void RingCoder::setShift(unsigned int ledOutput) {
 }
 
 unsigned int RingCoder::calculateShift(bool fill) {
-  return calculateShift(fill, LED_COUNT * _encoderPosition / _range);
+
+  return calculateShift(fill, 1 + (LED_COUNT * _encoderPosition / _range));
+
 }
 
 unsigned int RingCoder::calculateShift(bool fill, int pos) {
@@ -236,4 +238,3 @@ void RingCoder::shiftOut16(uint16_t data) {
   // Then shift out the LSB
   shiftOut(_datPin, _clkPin, MSBFIRST, datalsb);
 }
-
