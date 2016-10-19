@@ -7,10 +7,10 @@ int spectroHeight = bins*2;
 float magnitudes[] = new float[bins];
 PImage spectrogram;
 
-int colors[] = new int[64];
+int colors[] = new int[64*3];
 
 void setup () {
-  size(1024, 1024);
+  size(252, 820);
   println(Serial.list()[1]);
   serial = new Serial (this, Serial.list()[1], 115200);
   serial.bufferUntil('\n');
@@ -39,7 +39,18 @@ void draw() {
   }
   spectrogram.updatePixels();
   
-  image(spectrogram, 24, 24, bins*2, bins*4);
+  image(spectrogram, 64, 28, bins*2, bins*4);
+  
+  // display strand colors
+  translate(32, 32);
+  colorMode(RGB, 255, 255, 255);
+  for (int i = 64*3-3; i > 0; i-=3) {
+    fill(colors[i], colors[i+1], colors[i+2]);
+    
+    ellipse(0, 0, 10, 10);
+    ellipse(192, 0, 10, 10);
+    translate(0, 12);
+  }
 }
 
 
@@ -47,12 +58,12 @@ void serialEvent(Serial serial) {
   String rawSampleString = serial.readStringUntil('\n');
   String[] values = split(rawSampleString, ' ');
   
-  // first 64 values are LED colors, rest is FFT magnitudes
-  for (int i = 0; i < values.length && i < 64 + bins; i++) {
-    if (i < 64) {
+  // first 64*3 values are LED colors, rest is FFT magnitudes
+  for (int i = 0; i < values.length && i < 64*3 + bins; i++) {
+    if (i < 64*3) {
       colors[i] = int(values[i]);
     } else {
-      magnitudes[i-64] = float(values[i]);
+      magnitudes[i-64*3] = float(values[i]);
     }
   }
   redraw();

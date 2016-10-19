@@ -1,46 +1,28 @@
 #include "BasicAnimation.h"
 
-BasicAnimation::BasicAnimation(struct CRGB *pixels)
-{
-  //
-  // _ledPins[RED] = redPin;
-  // _ledPins[BLUE] = bluPin;
-  // _ledPins[GREEN] = grnPin;
-  //
-  // setPushButtonPins(swhPin);
-  // setLedPins();
-  // setShiftRegisterPins(enPin, latchPin, clkPin, clrPin, datPin);
-  //
-  // randomSeed(analogRead(UNCONNECTED_PIN));
-  // setShift(0x0000);
+BasicAnimation::BasicAnimation() {
 }
 
+BasicAnimation::BasicAnimation(struct CRGB *pixels, int pixelCount) {
+  _pixels = pixels;
+  _pixelCount = pixelCount;
+}
 
+void BasicAnimation::step(elapsedMillis elapsed, float audioPeak, float freqMagnitudes[]) {
+  // cycle hues
+  int hue = (int)(elapsed / 100.0) % 360;
+  fill_solid(&(_pixels[0]), _pixelCount, CHSV(hue, 255, 255));
+}
 
-// void stepAnimation() {
-//   switch(animationProgram) {
-//     case responsiveFFT:
-//
-//       // rotate hue
-//       hue += 0.4;
-//       if (hue > 360) hue -= 360;
-//
-//       // output with intensity
-//       // fill_solid(&(pixels[0]), PIXEL_COUNT, CHSV(hue, 255, map(audioIntensity, 0.0, 60.0, 0.0, 255.0)));
-//       // FastLED.show();
-//
-//       break;
-//
-//     case simpleHueShift:
-//
-//       // rotate hue
-//       hue += 0.8;
-//       if (hue > 360) hue -= 360;
-//
-//       // output with intensity
-//       // fill_solid(&(pixels[0]), PIXEL_COUNT, CHSV(hue, 255, 255));
-//       // FastLED.show();
-//
-//       break;
-//   }
+// === Utility Functions ===
+// float lerp(float start, float end, float percent) {
+//   return start + percent * (end - start);
+// }
+
+float BasicAnimation::map(float value, float istart, float istop, float ostart, float ostop) {
+  return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
+}
+
+// int map(int value, int istart, int istop, int ostart, int ostop) {
+//   return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
 // }

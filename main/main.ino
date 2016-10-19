@@ -8,6 +8,7 @@
 #include "Audio.h"
 
 #include "BasicAnimation.h"
+#include "AudioTestAnimation.h"
 
 
 #define SERIAL_DEBUG        true
@@ -56,16 +57,16 @@ int controlMode = 0;    // 0 (BLU) == set animation program
                         // 1 (GRN) == set LED brightness
                         // 2 (RED) == set FFT gain
 
-/* Animations */
+/* Animations Timing */
 const int ANIMATION_DELAY_MS = 12;  // about 82 FPS (remember FFT has limit of about 86 samples per second)
-const int ANIMATION_COUNT = 3;
-
-BasicAnimation animation = BasicAnimation(pixels);
-// [animations] = { class1, class2, class3 }
-
-int currentAnimation = 0;
 elapsedMillis fps;
 elapsedMillis ellapsed;
+
+/* Animations */
+const int ANIMATION_COUNT = 2;
+BasicAnimation* animations[ANIMATION_COUNT];
+int currentAnimationIdx = 0;
+
 
 // === LIFECYCLE ===
 void setup() {
@@ -80,6 +81,7 @@ void setup() {
   // setup pixels
   FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_0>(pixels, PIXEL_COUNT);
   FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_1>(pixels, PIXEL_COUNT);
+  // TODO: set a color profile
   fill_solid(&(pixels[0]), PIXEL_COUNT, CRGB(0, 0, 0));
   FastLED.clear();
   FastLED.setBrightness(brightness);
@@ -89,15 +91,16 @@ void setup() {
   ringcoder.spin();
   ringcoder.reverse_spin();
 
-  // set control mode
-  setMode(0);
-
-  // set inital animation
-  switchAnimation(0);
-
   // audio processing
   AudioMemory(12);
   fft.windowFunction(AudioWindowHanning1024);
+
+  // create animations
+  animations[0] = new BasicAnimation(pixels, PIXEL_COUNT);
+  animations[1] = new AudioTestAnimation(pixels, PIXEL_COUNT);
+
+  // set control mode
+  setMode(0);
 }
 
 void loop() {
@@ -118,8 +121,10 @@ void loop() {
   }
 
   // throttle visual updates to a set FPS
-  if (fps < ANIMATION_DELAY_MS)
+  if (fps < ANIMATION_DELAY_MS) {
+    FastLED.delay(4);
     return;
+  }
   fps = 0; // reset - fps variale automatically counts up
 
   // process new Peak value
@@ -137,7 +142,7 @@ void loop() {
   }
 
   // animations set pixels
-  // animation.step(ellapsed, audioPeak, freqMagnitudes);
+  animations[currentAnimationIdx]->step(ellapsed, audioPeak, freqMagnitudes);
   FastLED.show();
 
   // output values for Processing prototype visualization
@@ -145,7 +150,11 @@ void loop() {
     // spit all pixel values to serial
     int i;
     for (i = 0; i < PIXEL_COUNT; i++) {
-      Serial.print(pixels[i]);
+      Serial.print(pixels[i].r);
+      Serial.print(" ");
+      Serial.print(pixels[i].g);
+      Serial.print(" ");
+      Serial.print(pixels[i].b);
       Serial.print(" ");
     }
 
@@ -165,7 +174,7 @@ void setMode(int newMode) {
   if (controlMode == 0) {
     // BLUE mode - select animation
     ringcoder.setEncoderRange(ANIMATION_COUNT);
-    ringcoder.writeEncoder(currentAnimation);
+    ringcoder.writeEncoder(currentAnimationIdx);
     ringcoder.ledRingFollower();
     ringcoder.setKnobRgb(0, 0, 255);
   }
@@ -187,11 +196,9 @@ void setMode(int newMode) {
   }
 }
 
-void updateModeDisplay(int newValue) {
+void updateModeDisplay(u_int newValue) {
   if (controlMode == 0) {
-    if (currentAnimation != newValue) {
-      switchAnimation(newValue);
-    }
+    currentAnimationIdx = newValue;
     ringcoder.ledRingFollower();
   }
   else if (controlMode == 1) {
@@ -204,30 +211,4 @@ void updateModeDisplay(int newValue) {
     fftGain = newValue + FFT_GAIN_MIN;
     ringcoder.ledRingFiller();
   }
-}
-
-
-
-
-
-// === ANIMATIONS ===
-
-void switchAnimation(int idx) {
-  currentAnimation = idx;
-
-//   switch(animationProgram) {
-//     case responsiveFFT:
-//       runFFTSampling = true;
-//       audioIntensity = 0.0;
-//       hue = 0.0;
-//       break;
-//
-//     case simpleHueShift:
-//       runFFTSampling = false;
-//       hue = 0.0;
-//       break;
-//   }
-//
-//   // if (runFFTSampling)
-//     // samplingBegin();
 }
