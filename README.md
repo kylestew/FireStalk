@@ -1,5 +1,5 @@
 # FireStalk
-## Audio Responsive + Multi-Animation LED strip controller
+### Audio Responsive + Multi-Animation LED strip controller
 
 ![Hardware Prototype](hero.jpg)
 
