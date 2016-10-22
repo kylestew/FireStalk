@@ -18,10 +18,10 @@
 const int STATUS_LED = 13;
 
 /* Pixels */
-const int PIXEL_COUNT = 64;
+const int PIXEL_COUNT = 40;
 const int PIXEL_STRAND_0 = 11;
 const int PIXEL_STRAND_1 = 12;
-int brightness = 32;
+int brightness = 16;
 CRGB pixels[PIXEL_COUNT]; // mirrored
 
 /* Ring Encoder */
@@ -40,17 +40,19 @@ const int EN = 10;
 RingCoder ringcoder = RingCoder(ENCB, ENCA, LEDR, LEDB, LEDG, ENC_SW, DAT, CLR, CLK, LATCH, EN);
 
 /* Audio FFT Sampling */
-bool runFFTSampling = false;
-float fftGain = 32.0;
-const int FFT_GAIN_MIN = 8;
-const int FFT_GAIN_MAX = 92;
+float fftGain = 4.0;
+const float FFT_GAIN_MIN = 2;             // min audio gain slider
+const float FFT_GAIN_MAX = 24;            // max audio gain slider
+const float FFT_LERP = 0.4;              // smooth out FFT value changes
+const double RMS_GAIN_MULT = 0.4;         // RMS audio power adjustment ties to FFT
+const float RMS_LERP = 0.02;              // smooth out RMS value changes
 AudioInputAnalog        adc(A0);
 AudioAnalyzeRMS         rms;
 AudioAnalyzeFFT1024     fft;
 AudioConnection         patchCord1(adc, fft);
 AudioConnection         patchCord2(adc, rms);
 const int FREQUENCY_FILTER_RANGE = 64;
-double audioRMS = 0;
+double audioRMS = 0.0;
 float freqMagnitudes[FREQUENCY_FILTER_RANGE];
 
 /* Mode */
@@ -80,6 +82,7 @@ void setup() {
   digitalWrite(STATUS_LED, LOW);
 
   // setup pixels
+  // FastLED.setDither( 0 );
   FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_0>(pixels, PIXEL_COUNT);
   FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_1>(pixels, PIXEL_COUNT);
   // TODO: set a color profile
@@ -97,7 +100,8 @@ void setup() {
   fft.windowFunction(AudioWindowHanning1024);
 
   // create animations
-  animations[0] = new VUMeter(pixels, PIXEL_COUNT);
+  animations[0] = new BasicAnimation(pixels, PIXEL_COUNT);
+//  animations[0] = new VUMeter(pixels, PIXEL_COUNT);
   animations[1] = new FFTDisplay(pixels, PIXEL_COUNT);
 
   // set control mode
@@ -123,15 +127,14 @@ void loop() {
 
   // throttle visual updates to a set FPS
   if (fps < ANIMATION_DELAY_MS) {
-    FastLED.delay(4);
+    FastLED.delay(8);
     return;
   }
   fps = 0; // reset - fps variale automatically counts up
 
   // process new Peak value
   if (rms.available()) {
-    // map values more evenly
-    audioRMS = constrain((log(rms.read()) / 6.0) + 1, 0.0, 1.0);
+    audioRMS = lerp(audioRMS, rms.read() * (fftGain * RMS_GAIN_MULT), RMS_LERP); // dail in fft and RMS at same time
   }
 
   // process new FFT values
@@ -139,7 +142,9 @@ void loop() {
     // each bin is 43Hz - sample from 0Hz to 2752Hz (0 - 64)
     for (int i = 0; i < FREQUENCY_FILTER_RANGE; i++) {
       // normalize freq values across spectrum
-      freqMagnitudes[i] = fft.read(i) * fftGain * (log(i+1) + 1.0);
+      float val = fft.read(i);
+      if (val < 0.005) val = 0;
+      freqMagnitudes[i] = lerp(freqMagnitudes[i], val * fftGain * (log(i+1) + 1.0), FFT_LERP);
     }
   }
 
@@ -151,14 +156,14 @@ void loop() {
   if (SERIAL_DEBUG) {
     // spit all pixel values to serial
     int i;
-    for (i = 0; i < PIXEL_COUNT; i++) {
-      Serial.print(pixels[i].r);
-      Serial.print(" ");
-      Serial.print(pixels[i].g);
-      Serial.print(" ");
-      Serial.print(pixels[i].b);
-      Serial.print(" ");
-    }
+    // for (i = 0; i < PIXEL_COUNT; i++) {
+    //   Serial.print(pixels[i].r);
+    //   Serial.print(" ");
+    //   Serial.print(pixels[i].g);
+    //   Serial.print(" ");
+    //   Serial.print(pixels[i].b);
+    //   Serial.print(" ");
+    // }
 
     // spit all fft values to serial
     for (i = 0; i < FREQUENCY_FILTER_RANGE; i++) {
@@ -213,4 +218,10 @@ void updateModeDisplay(u_int newValue) {
     fftGain = newValue + FFT_GAIN_MIN;
     ringcoder.ledRingFiller();
   }
+}
+
+
+// === Utility Functions ===
+float lerp(float start, float end, float percent) {
+  return start + percent * (end - start);
 }

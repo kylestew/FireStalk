@@ -14,6 +14,7 @@ class BasicAnimation {
     CRGB *_pixels;
     int _pixelCount;
 
+    float lerp(float start, float end, float percent);
     float map(float value, float istart, float istop, float ostart, float ostop);
     int map(int value, int istart, int istop, int ostart, int ostop);
 };
