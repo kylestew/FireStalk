@@ -7,11 +7,6 @@
 #include "RingCoder.h"
 #include "Audio.h"
 
-#include "BasicAnimation.h"
-#include "Comet.h"
-// #include "FFTDisplay.h"
-// #include "VUMeter.h"
-
 
 #define SERIAL_DEBUG        false
 
@@ -19,10 +14,11 @@
 const int STATUS_LED = 13;
 
 /* Pixels */
-const int PIXEL_COUNT = 40;
+const int PIXEL_COUNT = 32;
 const int PIXEL_STRAND_0 = 11;
 const int PIXEL_STRAND_1 = 12;
-int brightness = 32;
+const int MAX_PIXEL_BRIGHTNESS = 64;
+int brightness = MAX_PIXEL_BRIGHTNESS / 4;
 CRGB pixels[PIXEL_COUNT]; // mirrored
 
 /* Ring Encoder */
@@ -49,8 +45,8 @@ const double RMS_GAIN_MULT = 0.4;         // RMS audio power adjustment ties to 
 const float RMS_LERP = 0.02;              // smooth out RMS value changes
 AudioInputAnalog        adc(A0);
 AudioAnalyzeRMS         rms;
-AudioAnalyzeFFT1024     fft;
-AudioConnection         patchCord1(adc, fft);
+// AudioAnalyzeFFT1024     fft;
+// AudioConnection         patchCord1(adc, fft);
 AudioConnection         patchCord2(adc, rms);
 const int FREQUENCY_FILTER_RANGE = 64;
 double audioRMS = 0.0;
@@ -62,14 +58,12 @@ int controlMode = 0;    // 0 (BLU) == set ANIMATION mode
                         // 2 (RED) == set FFT gain
 
 /* Animations Timing */
-const int ANIMATION_DELAY_MS = 12;  // about 82 FPS (remember FFT has limit of about 86 samples per second)
-// const int ANIMATION_DELAY_MS = 40;  // about 82 FPS (remember FFT has limit of about 86 samples per second)
+const int ANIMATION_DELAY_MS = 14;  // about 72 FPS (remember FFT has limit of about 86 samples per second)
 elapsedMillis fps;
-elapsedMillis ellapsed;
+elapsedMillis elapsed;
 
 /* Animations */
 const int ANIMATION_COUNT = 2;
-BasicAnimation* animations[ANIMATION_COUNT];
 int currentAnimationIdx = 0;
 
 
@@ -88,10 +82,10 @@ void setup() {
   // FastLED.setDither( 0 );
   FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_0>(pixels, PIXEL_COUNT);
   FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_1>(pixels, PIXEL_COUNT);
+  FastLED.setBrightness(brightness);
   // TODO: set a color profile
   fill_solid(&(pixels[0]), PIXEL_COUNT, CRGB(0, 0, 0));
   FastLED.clear();
-  FastLED.setBrightness(brightness);
 
   // boot animation on ring coder
   ringcoder.setKnobRgb(255, 0, 255);
@@ -99,14 +93,8 @@ void setup() {
   ringcoder.reverse_spin();
 
   // audio processing
-  AudioMemory(12);
-  fft.windowFunction(AudioWindowHanning1024);
-
-  // create animations
-  animations[0] = new Comet(pixels, PIXEL_COUNT);
-  animations[1] = new BasicAnimation(pixels, PIXEL_COUNT);
-//  animations[0] = new VUMeter(pixels, PIXEL_COUNT);
-  // animations[1] = new FFTDisplay(pixels, PIXEL_COUNT);
+  // AudioMemory(12);
+  // fft.windowFunction(AudioWindowHanning1024);
 
   // set control mode
   setMode(0);
@@ -131,8 +119,7 @@ void loop() {
 
   // throttle visual updates to a set FPS
   if (fps < ANIMATION_DELAY_MS) {
-    FastLED.delay(8);
-    // delay(8);
+    FastLED.delay(4);
     return;
   }
   fps = 0; // reset - fps variale automatically counts up
@@ -142,6 +129,7 @@ void loop() {
     audioRMS = lerp(audioRMS, rms.read() * (fftGain * RMS_GAIN_MULT), RMS_LERP); // dail in fft and RMS at same time
   }
 
+  /*
   // process new FFT values
   if (fft.available()) {
     // each bin is 43Hz - sample from 0Hz to 2752Hz (0 - 64)
@@ -152,10 +140,9 @@ void loop() {
       freqMagnitudes[i] = lerp(freqMagnitudes[i], val * fftGain * (log(i+1) + 1.0), FFT_LERP);
     }
   }
+  */
 
-  // animations set pixels
-  animations[currentAnimationIdx]->step(ellapsed, audioRMS, freqMagnitudes);
-  FastLED.show();
+  runCurrentAnimation();
 
   // output values for Processing prototype visualization
   if (SERIAL_DEBUG) {
@@ -180,6 +167,80 @@ void loop() {
 }
 
 
+// === ANIMATIONS ===
+
+boolean firstFrame = true;
+unsigned int prevElapsed;
+double timeDelta;
+
+void runCurrentAnimation() {
+  if (firstFrame) {
+    // skip first frame to setup time delta
+    firstFrame = false;
+    prevElapsed = elapsed;
+    return;
+  }
+
+  // time delta (in seconds) since last frame
+  timeDelta = (elapsed - prevElapsed) / 1000.0; // convert to seconds
+
+  switch(currentAnimationIdx) {
+    case 0:
+      // TODO: this should be auto mode
+      hueShift();
+      break;
+
+    case 1:
+      comet();
+      break;
+
+    default:
+      hueShift();
+  }
+
+  prevElapsed = elapsed;
+}
+
+// *** HUE SHIFT ***
+void hueShift() {
+  int hue = 360.0 * ((sin(elapsed / 6000.0) + 1.0) * 0.5);
+  fill_solid(&(pixels[0]), PIXEL_COUNT, CHSV(hue, 255, 255));
+  FastLED.show();
+}
+
+// *** COMET ***
+float cometPosition = 0.0;
+float cometVelocity = 84.0;
+
+void comet() {
+  // auto rotate the hue over time
+  int hue = 360.0 * ((sin(elapsed / 12000.0) + 1.0) * 0.5);
+
+  // set LED at current position
+  int idx = (cometPosition/100.0) * PIXEL_COUNT;
+  pixels[idx] = CHSV(hue, 255, 255);
+  FastLED.show();
+
+  // create tail effect
+  int bright = random(50, 100);
+  pixels[idx] = CHSV(hue+40, 255, bright);
+  fadeLEDs(8);
+
+  // apply velocity to position - bounce off ends
+  cometPosition += (cometVelocity * timeDelta); // velocity in M/s
+  if (cometPosition > 100) cometVelocity *= -1;
+  if (cometPosition < 0) cometVelocity *= -1;
+}
+
+
+
+void fadeLEDs(int fadeVal){
+  for (int i = 0; i < PIXEL_COUNT; i++){
+    pixels[i].fadeToBlackBy(fadeVal);
+  }
+}
+
+
 // === MODES ===
 void setMode(int newMode) {
   controlMode = newMode;
@@ -194,7 +255,7 @@ void setMode(int newMode) {
     // GREEN mode - select brightness
     // don't require user to click ever value - skip every 4
     // add a few ticks so we don't flip from brightess to darkest abruptly
-    ringcoder.setEncoderRange(68);
+    ringcoder.setEncoderRange(MAX_PIXEL_BRIGHTNESS / 4);
     ringcoder.writeEncoder(brightness/4);
     ringcoder.ledRingFiller();
     ringcoder.setKnobRgb(0, 255, 0);
@@ -216,7 +277,7 @@ void updateModeDisplay(u_int newValue) {
   }
   else if (controlMode == 1) {
     brightness = newValue * 4; // skipping every 4th value
-    if (brightness > 255) brightness = 255;
+    if (brightness > MAX_PIXEL_BRIGHTNESS) brightness = MAX_PIXEL_BRIGHTNESS;
     FastLED.setBrightness(brightness);
     ringcoder.ledRingFiller();
   }
@@ -231,3 +292,17 @@ void updateModeDisplay(u_int newValue) {
 float lerp(float start, float end, float percent) {
   return start + percent * (end - start);
 }
+
+/*
+float BasicAnimation::lerp(float start, float end, float percent) {
+  return start + percent * (end - start);
+}
+
+float BasicAnimation::map(float value, float istart, float istop, float ostart, float ostop) {
+  return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
+}
+
+int BasicAnimation::map(int value, int istart, int istop, int ostart, int ostop) {
+  return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
+}
+*/
