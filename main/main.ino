@@ -8,11 +8,12 @@
 #include "Audio.h"
 
 #include "BasicAnimation.h"
-#include "FFTDisplay.h"
-#include "VUMeter.h"
+#include "Comet.h"
+// #include "FFTDisplay.h"
+// #include "VUMeter.h"
 
 
-#define SERIAL_DEBUG        true
+#define SERIAL_DEBUG        false
 
 /* Status LED */
 const int STATUS_LED = 13;
@@ -21,7 +22,7 @@ const int STATUS_LED = 13;
 const int PIXEL_COUNT = 40;
 const int PIXEL_STRAND_0 = 11;
 const int PIXEL_STRAND_1 = 12;
-int brightness = 16;
+int brightness = 32;
 CRGB pixels[PIXEL_COUNT]; // mirrored
 
 /* Ring Encoder */
@@ -56,12 +57,13 @@ double audioRMS = 0.0;
 float freqMagnitudes[FREQUENCY_FILTER_RANGE];
 
 /* Mode */
-int controlMode = 0;    // 0 (BLU) == set animation program
+int controlMode = 0;    // 0 (BLU) == set ANIMATION mode
                         // 1 (GRN) == set LED brightness
                         // 2 (RED) == set FFT gain
 
 /* Animations Timing */
 const int ANIMATION_DELAY_MS = 12;  // about 82 FPS (remember FFT has limit of about 86 samples per second)
+// const int ANIMATION_DELAY_MS = 40;  // about 82 FPS (remember FFT has limit of about 86 samples per second)
 elapsedMillis fps;
 elapsedMillis ellapsed;
 
@@ -82,6 +84,7 @@ void setup() {
   digitalWrite(STATUS_LED, LOW);
 
   // setup pixels
+  delay(500); // give LED cap time to charge?
   // FastLED.setDither( 0 );
   FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_0>(pixels, PIXEL_COUNT);
   FastLED.addLeds<NEOPIXEL, PIXEL_STRAND_1>(pixels, PIXEL_COUNT);
@@ -91,7 +94,7 @@ void setup() {
   FastLED.setBrightness(brightness);
 
   // boot animation on ring coder
-  ringcoder.setKnobRgb(255, 255, 255);
+  ringcoder.setKnobRgb(255, 0, 255);
   ringcoder.spin();
   ringcoder.reverse_spin();
 
@@ -100,9 +103,10 @@ void setup() {
   fft.windowFunction(AudioWindowHanning1024);
 
   // create animations
-  animations[0] = new BasicAnimation(pixels, PIXEL_COUNT);
+  animations[0] = new Comet(pixels, PIXEL_COUNT);
+  animations[1] = new BasicAnimation(pixels, PIXEL_COUNT);
 //  animations[0] = new VUMeter(pixels, PIXEL_COUNT);
-  animations[1] = new FFTDisplay(pixels, PIXEL_COUNT);
+  // animations[1] = new FFTDisplay(pixels, PIXEL_COUNT);
 
   // set control mode
   setMode(0);
@@ -128,6 +132,7 @@ void loop() {
   // throttle visual updates to a set FPS
   if (fps < ANIMATION_DELAY_MS) {
     FastLED.delay(8);
+    // delay(8);
     return;
   }
   fps = 0; // reset - fps variale automatically counts up
@@ -183,7 +188,7 @@ void setMode(int newMode) {
     ringcoder.setEncoderRange(ANIMATION_COUNT);
     ringcoder.writeEncoder(currentAnimationIdx);
     ringcoder.ledRingFollower();
-    ringcoder.setKnobRgb(0, 0, 255);
+    currentAnimationIdx == 0 ? ringcoder.setKnobRgb(255, 255, 255) : ringcoder.setKnobRgb(0, 0, 255);
   }
   else if (controlMode == 1) {
     // GREEN mode - select brightness
@@ -207,6 +212,7 @@ void updateModeDisplay(u_int newValue) {
   if (controlMode == 0) {
     currentAnimationIdx = newValue;
     ringcoder.ledRingFollower();
+    currentAnimationIdx == 0 ? ringcoder.setKnobRgb(255, 255, 255) : ringcoder.setKnobRgb(0, 0, 255);
   }
   else if (controlMode == 1) {
     brightness = newValue * 4; // skipping every 4th value

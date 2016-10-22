@@ -202,7 +202,7 @@ void RingCoder::setShift(unsigned int ledOutput) {
 
 unsigned int RingCoder::calculateShift(bool fill) {
 
-  return calculateShift(fill, 1 + (LED_COUNT * _encoderPosition / _range));
+  return calculateShift(fill, LED_COUNT * _encoderPosition / _range);
 
 }
 
