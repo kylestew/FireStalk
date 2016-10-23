@@ -7,7 +7,8 @@ int spectroHeight = bins*2;
 float magnitudes[] = new float[bins];
 PImage spectrogram;
 
-int colors[] = new int[64*3];
+int pixelCount = 32;
+int colors[] = new int[pixelCount*3];
 
 void setup () {
   size(412, 700);
@@ -24,7 +25,8 @@ void setup () {
 int highIdx = 0;
 void draw() {
   background(22);
-  
+
+  /*
   // move the pixels down a row each frame
   spectrogram.copy(0, 0, bins, spectroHeight-1, 0, 1, bins, spectroHeight-1); 
   
@@ -41,18 +43,21 @@ void draw() {
   spectrogram.updatePixels();
   
   image(spectrogram, 80, 32, bins*4, bins*8);
+  */
   
   // display strand colors
-  //translate(32, 32);
-  //colorMode(RGB, 128, 128, 128); // pop colors - I think they are low due to calibration
-  //stroke(32);
-  //for (int i = 64*3-3; i > 0; i-=3) {
-  //  fill(colors[i], colors[i+1], colors[i+2]);
+  translate(32, 32);
+  stroke(32);
+  //colorMode(RGB, 16, 16, 16); // pop colors - I think they are low due to calibration
+  float pixelHeight = 18;
+  for (int i = 0; i < pixelCount*3; i+=3) {
+    fill(colors[i], colors[i+1], colors[i+2]);
     
-  //  rect(0, 0, 30, 8);
-  //  rect(320, 0, 30, 8);
-  //  translate(0, 10);
-  //}
+    rect(0, 0, 30, pixelHeight);
+    rect(320, 0, 30, pixelHeight);
+    translate(0, pixelHeight+2);
+  }
+  colorMode(RGB, 255, 255, 255);
 }
 
 
@@ -60,17 +65,18 @@ void serialEvent(Serial serial) {
   String rawSampleString = serial.readStringUntil('\n');
   String[] values = split(rawSampleString, ' ');
   
-  //println(rawSampleString);
+  println(values);
   
   // first 64*3 values are LED colors, rest is FFT magnitudes
 //  for (int i = 0; i < values.length && i < 64*3 + bins; i++) {
-  for (int i = 0; i < bins; i++) {
+  //for (int i = 0; i < bins; i++) {
+  for (int i = 0; i < pixelCount*3; i++) {
     //if (i < 64*3) {
-      //colors[i] = int(values[i]);
+      colors[i] = int(values[i]);
     //} else {
       //magnitudes[i-64*3] = float(values[i]);
     //}
-    magnitudes[i] = float(values[i]);
+    //magnitudes[i] = float(values[i]);
   }
   redraw();
 }

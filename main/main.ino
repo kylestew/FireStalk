@@ -8,17 +8,18 @@
 #include "Audio.h"
 
 
-#define SERIAL_DEBUG        false
+#define SERIAL_DEBUG        true
 
 /* Status LED */
 const int STATUS_LED = 13;
 
 /* Pixels */
-const int PIXEL_COUNT = 32;
+const int MAX_PIXEL_BRIGHTNESS = 192;
+int brightness = MAX_PIXEL_BRIGHTNESS / 3;
+
+const int PIXEL_COUNT = 40;
 const int PIXEL_STRAND_0 = 11;
 const int PIXEL_STRAND_1 = 12;
-const int MAX_PIXEL_BRIGHTNESS = 64;
-int brightness = MAX_PIXEL_BRIGHTNESS / 4;
 CRGB pixels[PIXEL_COUNT]; // mirrored
 
 /* Ring Encoder */
@@ -63,7 +64,7 @@ elapsedMillis fps;
 elapsedMillis elapsed;
 
 /* Animations */
-const int ANIMATION_COUNT = 2;
+const int ANIMATION_COUNT = 4;
 int currentAnimationIdx = 0;
 
 
@@ -90,10 +91,9 @@ void setup() {
   // boot animation on ring coder
   ringcoder.setKnobRgb(255, 0, 255);
   ringcoder.spin();
-  ringcoder.reverse_spin();
 
   // audio processing
-  // AudioMemory(12);
+  // AudioMemory(2);
   // fft.windowFunction(AudioWindowHanning1024);
 
   // set control mode
@@ -146,8 +146,11 @@ void loop() {
 
   // output values for Processing prototype visualization
   if (SERIAL_DEBUG) {
+    Serial.print(audioRMS);
+
+
     // spit all pixel values to serial
-    int i;
+    // int i;
     // for (i = 0; i < PIXEL_COUNT; i++) {
     //   Serial.print(pixels[i].r);
     //   Serial.print(" ");
@@ -158,17 +161,16 @@ void loop() {
     // }
 
     // spit all fft values to serial
-    for (i = 0; i < FREQUENCY_FILTER_RANGE; i++) {
-      Serial.print(freqMagnitudes[i]);
-      Serial.print(" ");
-    }
+    // for (i = 0; i < FREQUENCY_FILTER_RANGE; i++) {
+      // Serial.print(freqMagnitudes[i]);
+      // Serial.print(" ");
+    // }
     Serial.println();
   }
 }
 
 
 // === ANIMATIONS ===
-
 boolean firstFrame = true;
 unsigned int prevElapsed;
 double timeDelta;
@@ -185,27 +187,116 @@ void runCurrentAnimation() {
   timeDelta = (elapsed - prevElapsed) / 1000.0; // convert to seconds
 
   switch(currentAnimationIdx) {
+    // TODO: this should be auto mode
     case 0:
-      // TODO: this should be auto mode
-      hueShift();
+      fire();
       break;
 
     case 1:
+      sparkle();
+      break;
+
+    case 2:
       comet();
       break;
 
+    case 3:
+      rainbowCycle();
+      break;
+
     default:
-      hueShift();
+      rainbowCycle();
   }
 
   prevElapsed = elapsed;
 }
 
-// *** HUE SHIFT ***
-void hueShift() {
-  int hue = 360.0 * ((sin(elapsed / 6000.0) + 1.0) * 0.5);
-  fill_solid(&(pixels[0]), PIXEL_COUNT, CHSV(hue, 255, 255));
+
+// FFT
+// *** VU METER ***
+void vuMeter() {
+}
+
+
+
+
+// *** FIRE ***
+// http://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#fire
+const int FIRE_COOLING = 55;
+const int FIRE_SPARK_CHANCE = 120;
+const int FIRE_FRAME_HOLD = 20; // ms
+
+void fire() {
+  static byte heat[PIXEL_COUNT];
+  int cooldown;
+
+  // 1: cool down every cell a little
+  for (int i = 0; i < PIXEL_COUNT; i++) {
+    // ??? what is happening here
+    cooldown = random(0, ((FIRE_COOLING * 10) / PIXEL_COUNT) + 2);
+
+    if (cooldown > heat[i]) {
+      heat[i] = 0;
+    } else {
+      heat[i] -= cooldown;
+    }
+  }
+
+  // 2: heat from each cell drifts 'up' and diffuses a little
+  for (int i = PIXEL_COUNT - 1; i >= 2; i--) {
+    // shift heat upwards
+    heat[i] = (heat[i - 1] + heat[i - 2] + heat[i -2]) / 3;
+  }
+
+  // 3: randomly ignite new 'sparks' near the bottom
+  if (random(255) < FIRE_SPARK_CHANCE) {
+    // only the bottom 1/8th of pixels can ignite
+    int i = random(PIXEL_COUNT * 0.125);
+    heat[i] = heat[i] + random(160, 255);
+  }
+
+  // 4: display current fire status
+  for (int i = 0; i < PIXEL_COUNT; i++) {
+    setPixelHeatColor(i, heat[i]);
+  }
+
   FastLED.show();
+  delay(FIRE_FRAME_HOLD);
+}
+
+void setPixelHeatColor(int pixel, byte temp) {
+  // Scale 'heat' down from 0-255 to 0-191
+  byte t192 = round((temp/255.0)*191);
+
+  // calculate ramp up from
+  byte heatramp = t192 & 0x3F; // 0..63
+  // heatramp <<= 2; // scale up to 0..252
+
+  // figure out which third of the spectrum we're in:
+  if( t192 > 0x80) {                     // hottest
+    pixels[pixel] = CRGB(255, 128, heatramp);
+  } else if( t192 > 0x40 ) {             // middle
+    pixels[pixel] = CRGB(255, heatramp, 0);
+  } else {                               // coolest
+    pixels[pixel] = CRGB(heatramp, 0, 0);
+  }
+}
+
+// *** SPARKLE **
+// random pixel position and color ever X random frames
+// fade the effect over time
+int sparkleChance = 4;
+
+void sparkle() {
+  // 1 in X chance to fire off a sparkle
+  if (random(0, sparkleChance) == 0) {
+    int idx = random(0, PIXEL_COUNT-1);
+    int hue = random(0, 355);
+    pixels[idx] = CHSV(hue, 255, 255);
+    FastLED.show();
+  }
+
+  fadeLEDs(2);
 }
 
 // *** COMET ***
@@ -214,7 +305,7 @@ float cometVelocity = 84.0;
 
 void comet() {
   // auto rotate the hue over time
-  int hue = 360.0 * ((sin(elapsed / 12000.0) + 1.0) * 0.5);
+  int hue = 255.0 * ((sin(elapsed / 12000.0) + 1.0) * 0.5);
 
   // set LED at current position
   int idx = (cometPosition/100.0) * PIXEL_COUNT;
@@ -232,8 +323,19 @@ void comet() {
   if (cometPosition < 0) cometVelocity *= -1;
 }
 
+// *** RAINBOW CYCLE ***
+void rainbowCycle() {
+  float angle = (elapsed / 50) % 255; // offset starting angle over time
+  float angleStep = 255 / PIXEL_COUNT; // show whole color wheel across strip
+  for (int i = 0; i < PIXEL_COUNT; i++){
+    pixels[i] = CHSV(angle, 255, 255);
+    angle += angleStep;
+  }
 
+  FastLED.show();
+}
 
+// LED utilities
 void fadeLEDs(int fadeVal){
   for (int i = 0; i < PIXEL_COUNT; i++){
     pixels[i].fadeToBlackBy(fadeVal);
