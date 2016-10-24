@@ -8,16 +8,16 @@
 #include "Audio.h"
 
 
-#define SERIAL_DEBUG        true
+#define SERIAL_DEBUG        false
 
 /* Status LED */
 const int STATUS_LED = 13;
 
 /* Pixels */
-const int MAX_PIXEL_BRIGHTNESS = 192;
+const int MAX_PIXEL_BRIGHTNESS = 142; // testing here
 int brightness = MAX_PIXEL_BRIGHTNESS / 3;
 
-const int PIXEL_COUNT = 40;
+const int PIXEL_COUNT = 60;
 const int PIXEL_STRAND_0 = 11;
 const int PIXEL_STRAND_1 = 12;
 CRGB pixels[PIXEL_COUNT]; // mirrored
@@ -125,9 +125,9 @@ void loop() {
   fps = 0; // reset - fps variale automatically counts up
 
   // process new Peak value
-  if (rms.available()) {
-    audioRMS = lerp(audioRMS, rms.read() * (fftGain * RMS_GAIN_MULT), RMS_LERP); // dail in fft and RMS at same time
-  }
+//  if (rms.available()) {
+//    audioRMS = lerp(audioRMS, rms.read() * (fftGain * RMS_GAIN_MULT), RMS_LERP); // dail in fft and RMS at same time
+//  }
 
   /*
   // process new FFT values
@@ -189,7 +189,7 @@ void runCurrentAnimation() {
   switch(currentAnimationIdx) {
     // TODO: this should be auto mode
     case 0:
-      fire();
+      rainbowCycle();
       break;
 
     case 1:
@@ -201,7 +201,7 @@ void runCurrentAnimation() {
       break;
 
     case 3:
-      rainbowCycle();
+      fire();
       break;
 
     default:
@@ -325,7 +325,7 @@ void comet() {
 
 // *** RAINBOW CYCLE ***
 void rainbowCycle() {
-  float angle = (elapsed / 50) % 255; // offset starting angle over time
+  float angle = (elapsed / 20) % 255; // offset starting angle over time
   float angleStep = 255 / PIXEL_COUNT; // show whole color wheel across strip
   for (int i = 0; i < PIXEL_COUNT; i++){
     pixels[i] = CHSV(angle, 255, 255);
