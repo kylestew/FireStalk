@@ -22,7 +22,7 @@ void setup() {
   serial.bufferUntil('\n');
 
   // img = loadImage("test.bmp");
-  img = loadImage("test4.bmp");
+
 }
 
 
@@ -74,7 +74,6 @@ void stop() {
 /* == PHOTOSCAN == */
 static int PHOTOSCAN_SAMPLE_X_MILLIS = 200;
 int photoscanLastScanMillis = 0;
-int photoscanColumn = 0;
 
 void photoscan() {
   pixelFadeLerp = 0.03;

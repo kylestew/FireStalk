@@ -15,7 +15,7 @@ const int STATUS_LED = 13;
 
 /* Pixels */
 const int MAX_PIXEL_BRIGHTNESS = 204; // 4/5th total
-int brightness = MAX_PIXEL_BRIGHTNESS / 3;
+int brightness = MAX_PIXEL_BRIGHTNESS / 2;
 
 const int PIXEL_COUNT = 40;
 const int PIXEL_STRAND_0 = 11;
@@ -44,7 +44,7 @@ const float FFT_GAIN_MAX = 12;            // max audio gain slider
 const float FFT_LERP = 0.4;              // smooth out FFT value changes
 const double RMS_GAIN_MULT = 0.333;         // RMS audio power adjustment ties to FFT
 const float RMS_LERP = 0.02;              // smooth out RMS value changes
-AudioInputAnalog        adc(A0);
+AudioInputAnalog        adc; // A2 - pin 16
 AudioAnalyzeRMS         rms;
 // AudioAnalyzeFFT1024     fft;
 // AudioConnection         patchCord1(adc, fft);
@@ -91,9 +91,6 @@ void setup() {
   // audio processing
   AudioMemory(8);
   // fft.windowFunction(AudioWindowHanning1024);
-
-  // let first animation run setup
-  switchAnimation(0);
 
   // set control mode
   setMode(0);
@@ -150,7 +147,6 @@ void loop() {
   if (SERIAL_DEBUG) {
     Serial.println(audioRMS);
 
-
     // spit all pixel values to serial
     // int i;
     // for (i = 0; i < PIXEL_COUNT; i++) {
@@ -171,49 +167,47 @@ void loop() {
   }
 }
 
-
-// === ANIMATIONS ===
-const int ANIMATION_COUNT = 1;
+// =============================================================================
+// === ANIMATIONS ==============================================================
+// =============================================================================
+const int ANIMATION_COUNT = 4;
 typedef enum {
-
-  TAKEOFF,
-
   FIREWORKS, // (audio)
-  BOUNCEBALL,
-  PLASMA,
-  FIRE,
+  INTERFERENCE,
+  FIRE, // (audio)
+  // BOUNCEBALL,
+  // PLASMA,
+  // RAIN
+  // VU_METER_WAVE_WALKER - speed adjusts with RMS volume
 
   // BEN's animations
   PAPARAZZI,
+  PANBARFULL,
+  TAKEOFF,
 
 
-  VUMETER,
+  // VUMETER,
   RAINBOW,
 } ANIMATIONS;
+int selectedAnimation = 0; // AUTO MODE is default
 int currentAnimationIdx = 0;
+
+const int AUTO_ANIMATION_CYCLE_TIME = 12000; // 12 seconds
+int autoAnimationLastCycleTime = 0;
 
 long frameCount = 0;
 unsigned int prevElapsed;
 double timeDelta; // fractions of a second
 
 void switchAnimation(int newValue) {
-  currentAnimationIdx = newValue;
-
-  switch(currentAnimationIdx) {
-    case FIREWORKS:
-      fireworksSetup();
-      break;
-
-    case BOUNCEBALL:
-      bounceballSetup();
-      break;
-
-    case PLASMA:
-      plasmaSetup();
-      break;
-
-    default:
-      break;
+  selectedAnimation = newValue;
+  if (selectedAnimation == 0) {
+    // start auto mode loop
+    currentAnimationIdx = 0;
+    autoAnimationLastCycleTime = millis();
+  } else {
+    // index into animation list
+    currentAnimationIdx = selectedAnimation - 1;
   }
 }
 
@@ -225,6 +219,13 @@ void runCurrentAnimation() {
     return;
   }
 
+  // AUTO MODE - cycle animations
+  if (selectedAnimation == 0 && millis() - autoAnimationLastCycleTime > AUTO_ANIMATION_CYCLE_TIME) {
+    autoAnimationLastCycleTime = millis();
+    currentAnimationIdx++;
+    if (currentAnimationIdx > ANIMATION_COUNT) currentAnimationIdx = 0;
+  }
+
   // time delta (in seconds) since last frame
   timeDelta = (elapsed - prevElapsed) / 1000.0; // convert to seconds
 
@@ -232,17 +233,19 @@ void runCurrentAnimation() {
     case FIREWORKS:
       fireworks();
       break;
-
-    case BOUNCEBALL:
-      bounceball();
+    case INTERFERENCE:
+      interference();
       break;
-
-    case PLASMA:
-      plasma();
-      break;
-
     case FIRE:
+      firewalkwithme();
       break;
+
+    // case BOUNCEBALL:
+    //   bounceball();
+    //   break;
+    // case PLASMA:
+    //   plasma();
+    //   break;
 
     // == BEN ==========
     case PAPARAZZI:
@@ -253,12 +256,15 @@ void runCurrentAnimation() {
       takeOff();
       break;
 
+    case PANBARFULL:
+      panBarFull();
+      break;
 
     // =================
 
-    case VUMETER:
-      vuMeter();
-      break;
+    // case VUMETER:
+    //   vuMeter();
+    //   break;
     case RAINBOW:
     default:
       rainbowCycle();
@@ -299,9 +305,6 @@ void ejectFireball() {
     fireworkIndex = 0;
 
   lastFireballEjectMillis = elapsed;
-}
-
-void fireworksSetup() {
 }
 
 void fireworks() {
@@ -347,6 +350,93 @@ void fireworks() {
 
   // fade out tails and trails
   fadeToBlackBy(&(pixels[0]), PIXEL_COUNT, 32);
+}
+
+
+/* == INTERFERENCE == */
+// color bands caused by interference patterns of overlapping waves
+// https://i.ytimg.com/vi/sXlYmLQdJU4/maxresdefault.jpg
+
+const float INTERFERENCE_ANGLE_SWEEP = 0.6;
+const float INTERFERENCE_SPEED = 0.3;
+float interferenceWave1 = 0;
+float interferenceWave2 = 0;
+
+void interference() {
+  // clear frame
+  fill_solid(&(pixels[0]), PIXEL_COUNT, CRGB(0, 0, 0));
+
+  // wave 1 - sine
+  float angle = interferenceWave1;
+  float bri;
+  for (int i = 0; i < PIXEL_COUNT; i++) {
+    bri = map(sin(angle), -1.0, 1.0, 0.0, 200.0);
+    pixels[i] += CHSV(0, 128+bri*0.5, bri); // additive
+    angle += INTERFERENCE_ANGLE_SWEEP;
+    Serial.println(bri);
+  }
+
+  // wave 2 - sine with PI/2 phase angle
+  angle = interferenceWave2;
+  for (int i = 0; i < PIXEL_COUNT; i++) {
+    bri = map(sin(angle), -1.0, 1.0, 0.0, 200.0);
+    pixels[i] += CHSV(128, 128+bri*0.5, bri); // additive
+    angle += INTERFERENCE_ANGLE_SWEEP; // sweep opposite direction
+    Serial.println(bri);
+  }
+
+  FastLED.show();
+
+  interferenceWave1 += INTERFERENCE_SPEED;
+  interferenceWave2 += INTERFERENCE_SPEED * 1.05;
+}
+
+
+// *** FIRE ***
+// http://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#fire
+const int FIRE_COOLING = 55;
+const int FIRE_SPARK_CHANCE_MAX = 180;
+const int FIRE_SPARK_CHANCE_MIN = 40;
+const int FIRE_FRAME_HOLD = 30; // ms
+
+void firewalkwithme() {
+  static byte heat[PIXEL_COUNT];
+  int cooldown;
+
+  // 1: cool down every cell a little
+  for (int i = 0; i < PIXEL_COUNT; i++) {
+    // ??? what is happening here
+    cooldown = random(0, ((FIRE_COOLING * 10) / PIXEL_COUNT) + 2);
+
+    if (cooldown > heat[i]) {
+      heat[i] = 0;
+    } else {
+      heat[i] -= cooldown;
+    }
+  }
+
+  // 2: heat from each cell drifts 'up' and diffuses a little
+  for (int i = PIXEL_COUNT - 1; i >= 2; i--) {
+    // shift heat upwards
+    heat[i] = (heat[i - 1] + heat[i - 2] + heat[i -2]) / 3;
+  }
+
+  // 3: randomly ignite new 'sparks' near the bottom
+  // audio RMS changes randomness
+  int sparkChance = (int)map(audioRMS, 0.0, 1.0, (float)FIRE_SPARK_CHANCE_MIN, (float)FIRE_SPARK_CHANCE_MAX);
+  if (random(255) < sparkChance) {
+    // only the bottom 1/8th of pixels can ignite
+    int i = random(PIXEL_COUNT * 0.125);
+    heat[i] = heat[i] + random(160, 255);
+  }
+
+  // 4: display current fire status
+  for (int i = 0; i < PIXEL_COUNT; i++) {
+    pixels[i] = HeatColor(heat[i]);
+  }
+
+  FastLED.show();
+  delay(FIRE_FRAME_HOLD);
 }
 
 
@@ -441,74 +531,6 @@ void plasma() {
 
 
 
-
-
-
-
-
-// *** FIRE ***
-// http://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#fire
-// const int FIRE_COOLING = 55;
-// const int FIRE_SPARK_CHANCE = 120;
-// const int FIRE_FRAME_HOLD = 20; // ms
-//
-// void fire() {
-//   static byte heat[PIXEL_COUNT];
-//   int cooldown;
-//
-//   // 1: cool down every cell a little
-//   for (int i = 0; i < PIXEL_COUNT; i++) {
-//     // ??? what is happening here
-//     cooldown = random(0, ((FIRE_COOLING * 10) / PIXEL_COUNT) + 2);
-//
-//     if (cooldown > heat[i]) {
-//       heat[i] = 0;
-//     } else {
-//       heat[i] -= cooldown;
-//     }
-//   }
-//
-//   // 2: heat from each cell drifts 'up' and diffuses a little
-//   for (int i = PIXEL_COUNT - 1; i >= 2; i--) {
-//     // shift heat upwards
-//     heat[i] = (heat[i - 1] + heat[i - 2] + heat[i -2]) / 3;
-//   }
-//
-//   // 3: randomly ignite new 'sparks' near the bottom
-//   if (random(255) < FIRE_SPARK_CHANCE) {
-//     // only the bottom 1/8th of pixels can ignite
-//     int i = random(PIXEL_COUNT * 0.125);
-//     heat[i] = heat[i] + random(160, 255);
-//   }
-//
-//   // 4: display current fire status
-//   for (int i = 0; i < PIXEL_COUNT; i++) {
-//     setPixelHeatColor(i, heat[i]);
-//   }
-//
-//   FastLED.show();
-//   delay(FIRE_FRAME_HOLD);
-// }
-//
-// void setPixelHeatColor(int pixel, byte temp) {
-//   // Scale 'heat' down from 0-255 to 0-191
-//   byte t192 = round((temp/255.0)*191);
-//
-//   // calculate ramp up from
-//   byte heatramp = t192 & 0x3F; // 0..63
-//   // heatramp <<= 2; // scale up to 0..252
-//
-//   // figure out which third of the spectrum we're in:
-//   if( t192 > 0x80) {                     // hottest
-//     pixels[pixel] = CRGB(255, 128, heatramp);
-//   } else if( t192 > 0x40 ) {             // middle
-//     pixels[pixel] = CRGB(255, heatramp, 0);
-//   } else {                               // coolest
-//     pixels[pixel] = CRGB(heatramp, 0, 0);
-//   }
-// }
-
-
 /* == PAPARAZZI == */
 const int PAPARAZZI_FRAME_HOLD = 20; // ms
 
@@ -528,45 +550,41 @@ void paparazzi() {
 
 /* == TAKEOFF == */
 void takeOff() {
-  panBar(1, 0, NUM_LEDS);
-  panBar(1, 0, NUM_LEDS, 2);
-  panBar(2, 0, NUM_LEDS, 3);
-  panBar(2, 0, NUM_LEDS, 4);
-  panBar(4, 0, NUM_LEDS, 5);
-  panBar(4, 0, NUM_LEDS, 6);
-  panBar(8, 0, NUM_LEDS, 7);
-  panBar(8, 0, NUM_LEDS, 8);
-  panBar(16, 0, NUM_LEDS, 9);
-  panBar(16, 0, NUM_LEDS, 10);
-  panBar(16, 0, NUM_LEDS, 10);
-  panBar(16, 0, NUM_LEDS, 15);
-  panBar(16, 0, NUM_LEDS, 15);
-  panBar(16, 0, NUM_LEDS, 15);
-  panBar(1, NUM_LEDS, 0);
+  // acceleration!?
+  panBar(1, 0, PIXEL_COUNT);
+  // panBar(1, 0, NUM_LEDS, 2);
+  // panBar(2, 0, NUM_LEDS, 3);
+  // panBar(2, 0, NUM_LEDS, 4);
+  // panBar(4, 0, NUM_LEDS, 5);
+  // panBar(4, 0, NUM_LEDS, 6);
+  // panBar(8, 0, NUM_LEDS, 7);
+  // panBar(8, 0, NUM_LEDS, 8);
+  // panBar(16, 0, NUM_LEDS, 9);
+  // panBar(16, 0, NUM_LEDS, 10);
+  // panBar(16, 0, NUM_LEDS, 10);
+  // panBar(16, 0, NUM_LEDS, 15);
+  // panBar(16, 0, NUM_LEDS, 15);
+  // panBar(16, 0, NUM_LEDS, 15);
+  // panBar(1, NUM_LEDS, 0);
 }
 
-void panBar(int barWidth, int start, int finish, int fpsMultiplier = 1){
-  //
-  // if( start < finish ){
-  //
-  //   // up
-  //   for(int i=start; i<finish; i++){
-  //     drawBar(barWidth, i);
-  //     runFPS(fpsMultiplier);
-  //   }
-  // }else{
-  //
-  //   // down
-  //   for(int i=start; i>finish; i--){
-  //     drawBar(barWidth, i);
-  //     runFPS(fpsMultiplier);
-  //   }
-  // }
+void panBar(int barWidth, int start, int finish){
+  if (start < finish) {
+    // up
+    for(int i = start; i < finish; i++) {
+      drawBar(barWidth, i);
+    }
+  } else {
+    // down
+    for(int i = start; i > finish; i--) {
+      drawBar(barWidth, i);
+    }
+  }
 }
 
 void drawBar(int barWidth, int start) {
-  //
-  // // turn off all leds
+
+  // turn off all leds
   // for (int k=0; k < NUM_LEDS; k++){
   //   setPixel(k, 0x00, 0x00, 0x00);
   // }
@@ -575,9 +593,39 @@ void drawBar(int barWidth, int start) {
   // for (int i=start; i < start + barWidth; i++){
   //   setPixel(i, 0x00, 0xff, 0xff);
   // }
-  //
-  // showStrip();
+
+  FastLED.show();
 }
+
+
+/* == PANBARFULL == */
+const int PANBARFULL_BAR_WIDTH = 4;
+const int PANBARFULL_FRAME_HOLD = 20;
+
+void panBarFull() {
+  float barWidth = PANBARFULL_BAR_WIDTH;
+
+  for (int k = 0; k < PIXEL_COUNT + barWidth; k = k + 1) {
+    setPixel(k, 0xff, 0xff, 0xff);
+    FastLED.show();
+    for (int i = 0; i < barWidth; i++){
+      setPixel(k-barWidth, 0x00, 0x00, 0x00);
+    }
+
+    delay(PANBARFULL_FRAME_HOLD);
+  }
+
+  for (int k = PIXEL_COUNT; k > 0 - barWidth; k = k - 1) {
+    setPixel(k, 0xff, 0xff, 0xff);
+    FastLED.show();
+    setPixel(k+barWidth, 0x00, 0x00, 0x00);
+
+    delay(PANBARFULL_FRAME_HOLD);
+  }
+}
+
+
+
 
 
 
@@ -667,16 +715,6 @@ float lerp(float start, float end, float percent) {
   return start + percent * (end - start);
 }
 
-/*
-float BasicAnimation::lerp(float start, float end, float percent) {
-  return start + percent * (end - start);
-}
-
-float BasicAnimation::map(float value, float istart, float istop, float ostart, float ostop) {
+float map(float value, float istart, float istop, float ostart, float ostop) {
   return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
 }
-
-int BasicAnimation::map(int value, int istart, int istop, int ostart, int ostop) {
-  return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
-}
-*/
