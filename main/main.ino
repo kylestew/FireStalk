@@ -14,7 +14,7 @@
 const int STATUS_LED = 13;
 
 /* Pixels */
-const int MAX_PIXEL_BRIGHTNESS = 212;
+const int MAX_PIXEL_BRIGHTNESS = 204; // 4/5th total
 int brightness = MAX_PIXEL_BRIGHTNESS / 3;
 
 const int PIXEL_COUNT = 40;
@@ -38,17 +38,17 @@ const int EN = 10;
 RingCoder ringcoder = RingCoder(ENCB, ENCA, LEDR, LEDB, LEDG, ENC_SW, DAT, CLR, CLK, LATCH, EN);
 
 /* Audio FFT Sampling */
-float fftGain = 4.0;
-const float FFT_GAIN_MIN = 2;             // min audio gain slider
-const float FFT_GAIN_MAX = 24;            // max audio gain slider
+float fftGain = 8.0;
+const float FFT_GAIN_MIN = 1;             // min audio gain slider
+const float FFT_GAIN_MAX = 12;            // max audio gain slider
 const float FFT_LERP = 0.4;              // smooth out FFT value changes
-const double RMS_GAIN_MULT = 0.4;         // RMS audio power adjustment ties to FFT
+const double RMS_GAIN_MULT = 0.333;         // RMS audio power adjustment ties to FFT
 const float RMS_LERP = 0.02;              // smooth out RMS value changes
-// AudioInputAnalog        adc(A0);
-// AudioAnalyzeRMS         rms;
+AudioInputAnalog        adc(A0);
+AudioAnalyzeRMS         rms;
 // AudioAnalyzeFFT1024     fft;
 // AudioConnection         patchCord1(adc, fft);
-// AudioConnection         patchCord2(adc, rms);
+AudioConnection         patchCord2(adc, rms);
 const int FREQUENCY_FILTER_RANGE = 64;
 double audioRMS = 0.0;
 float freqMagnitudes[FREQUENCY_FILTER_RANGE];
@@ -89,7 +89,7 @@ void setup() {
   ringcoder.spin();
 
   // audio processing
-  // AudioMemory(2);
+  AudioMemory(8);
   // fft.windowFunction(AudioWindowHanning1024);
 
   // let first animation run setup
@@ -103,42 +103,9 @@ int serialReadIndex = 0;
 int serialColorIndex = 0;
 
 void loop() {
-
-  /*
-  // slave mode
-  while (Serial.available()) {
-    char val = Serial.read();
-    if (val == '\n') {
-      // pixel buffer fill complete - display pixels
-      FastLED.show();
-      serialReadIndex = 0;
-      serialColorIndex = 0;
-    } else if (val >= 0 && val < 256) {
-
-      if (serialColorIndex == 0)
-        pixels[serialReadIndex/3].r = val;
-      else if (serialColorIndex == 1)
-        pixels[serialReadIndex/3].g = val;
-      else
-        pixels[serialReadIndex/3].b = val;
-
-      serialColorIndex++;
-      if (serialColorIndex > 2) serialColorIndex = 0;
-
-      serialReadIndex++;
-
-    }
-  }
-  // FastLED.delay(8);
-  */
-
-
-
-
   // DON'T BLOCK MAIN LOOP
   // ring coder is a polling input
   // watch for button changes
-  /*
   if (ringcoder.update() && ringcoder.button() == HIGH) {
     // toggle mode
     int newMode = controlMode + 1;
@@ -151,7 +118,6 @@ void loop() {
     // update ring coder display
     updateModeDisplay(encValue);
   }
-  */
 
   // throttle visual updates to a set FPS
   if (fps < ANIMATION_MAX_FPS) {
@@ -161,9 +127,9 @@ void loop() {
   fps = 0; // reset - fps variale automatically counts up
 
   // process new Peak value
-//  if (rms.available()) {
-//    audioRMS = lerp(audioRMS, rms.read() * (fftGain * RMS_GAIN_MULT), RMS_LERP); // dail in fft and RMS at same time
-//  }
+  if (rms.available()) {
+     audioRMS = rms.read() * (fftGain * RMS_GAIN_MULT); // dail in fft and RMS at same time
+  }
 
   /*
   // process new FFT values
@@ -182,7 +148,7 @@ void loop() {
 
   // output values for Processing prototype visualization
   if (SERIAL_DEBUG) {
-    // Serial.print(audioRMS);
+    Serial.println(audioRMS);
 
 
     // spit all pixel values to serial
@@ -209,13 +175,26 @@ void loop() {
 // === ANIMATIONS ===
 const int ANIMATION_COUNT = 1;
 typedef enum {
-  FIREWORKS,
+
+  TAKEOFF,
+
+  FIREWORKS, // (audio)
+  BOUNCEBALL,
+  PLASMA,
+  FIRE,
+
+  // BEN's animations
+  PAPARAZZI,
+
+
+  VUMETER,
+  RAINBOW,
 } ANIMATIONS;
 int currentAnimationIdx = 0;
 
-boolean firstFrame = true;
+long frameCount = 0;
 unsigned int prevElapsed;
-double timeDelta;
+double timeDelta; // fractions of a second
 
 void switchAnimation(int newValue) {
   currentAnimationIdx = newValue;
@@ -224,16 +203,25 @@ void switchAnimation(int newValue) {
     case FIREWORKS:
       fireworksSetup();
       break;
+
+    case BOUNCEBALL:
+      bounceballSetup();
+      break;
+
+    case PLASMA:
+      plasmaSetup();
+      break;
+
     default:
       break;
   }
 }
 
 void runCurrentAnimation() {
-  if (firstFrame) {
+  if (frameCount == 0) {
     // skip first frame to setup time delta
-    firstFrame = false;
     prevElapsed = elapsed;
+    frameCount++;
     return;
   }
 
@@ -245,81 +233,209 @@ void runCurrentAnimation() {
       fireworks();
       break;
 
-    // case 1:
-    //   sparkle();
-    //   break;
-    //
-    // case 2:
-    //   comet();
-    //   break;
-    //
-    // case 3:
-    //   fire();
-    //   break;
+    case BOUNCEBALL:
+      bounceball();
+      break;
 
+    case PLASMA:
+      plasma();
+      break;
+
+    case FIRE:
+      break;
+
+    // == BEN ==========
+    case PAPARAZZI:
+      paparazzi();
+      break;
+
+    case TAKEOFF:
+      takeOff();
+      break;
+
+
+    // =================
+
+    case VUMETER:
+      vuMeter();
+      break;
+    case RAINBOW:
     default:
       rainbowCycle();
   }
 
   prevElapsed = elapsed;
+  frameCount++;
 }
 
 
 /* == FIREWORKS == */
-
-// TODO: multiple randomly ignited fireworks
-
 struct Firework {
+  boolean alive;
   int hue;
   float pos;
   float vel;
   float decel;
 };
-struct Firework firework;
 
-struct Firework fireworksMakeOne() {
-  struct Firework f;
+const int FIREWORK_MAX_VISIBLE = 12;
+const int FIREWORK_MAX_EJECT_TIME = 1400;
+const int FIREWORK_MIN_EJECT_TIME = 200;
+const float FIREWORK_AUDIO_THRESHOLD = 0.575;
+long lastFireballEjectMillis = 0;
+Firework fireballs[FIREWORK_MAX_VISIBLE];
+int fireworkIndex = 0;
+
+void ejectFireball() {
+  Firework f;
+  f.alive = true;
   f.hue = (byte)random(256);
   f.pos = 0;
-  f.vel = 1.0 + random(1000)/500.0; // 1.0 - 1.5
-  f.decel = 0.975;
-  return f;
+  // f.vel = 0.9 + random(1000)/500.0;
+  f.vel = 0.5 + (random(100) / 100.0) + (audioRMS * 1.4);
+  f.decel = 0.972;
+  fireballs[fireworkIndex++] = f;
+  if (fireworkIndex > FIREWORK_MAX_VISIBLE - 1)
+    fireworkIndex = 0;
+
+  lastFireballEjectMillis = elapsed;
 }
 
 void fireworksSetup() {
-  firework = fireworksMakeOne();
 }
 
 void fireworks() {
-  // random chance to eject firework updwards with speed and velocity
+  // don't always wait for audio hits
+  if (elapsed - lastFireballEjectMillis > FIREWORK_MAX_EJECT_TIME) {
+    ejectFireball();
+  } else if (audioRMS > FIREWORK_AUDIO_THRESHOLD && FIREWORK_MIN_EJECT_TIME) {
+    // audio hit - eject
+    ejectFireball();
+  }
 
-  if (firework.pos >= 0 && firework.pos < PIXEL_COUNT) {
-    // body
-    int idx = (int)firework.pos;
-    pixels[idx] = CHSV(firework.hue, 255, 255);
+  for (int i = 0; i < FIREWORK_MAX_VISIBLE; i++) {
+    Firework firework = fireballs[i];
 
-    // tail - random hue wobble and decreasing brightness
-    if (idx - 1 >= 0)
-      pixels[idx - 1] = CHSV(random(firework.hue - 18, firework.hue + 18), 255, 192);
-    if (idx - 2 >= 0)
-      pixels[idx - 2] = CHSV(random(firework.hue - 18, firework.hue + 18), 255, 129);
-    if (idx - 3 >= 0)
-      pixels[idx - 3] = CHSV(random(firework.hue - 18, firework.hue + 18), 255, 66);
+    if (firework.alive == true && firework.pos >= 0 && firework.pos < PIXEL_COUNT) {
+      // body
+      int idx = (int)firework.pos;
+      pixels[idx] += CHSV(firework.hue, 255, 255);
 
-    // apply physics
-    firework.pos += firework.vel;
-    firework.vel *= firework.decel;
+      // tail - random hue wobble and decreasing brightness
+      if (idx - 1 >= 0)
+        pixels[idx - 1] += CHSV(random(firework.hue - 18, firework.hue + 18), 255, 192);
+      if (idx - 2 >= 0)
+        pixels[idx - 2] += CHSV(random(firework.hue - 18, firework.hue + 18), 255, 129);
+      if (idx - 3 >= 0)
+        pixels[idx - 3] = CHSV(random(firework.hue - 18, firework.hue + 18), 255, 66);
+
+      // apply physics
+      firework.pos += firework.vel;
+      firework.vel *= firework.decel;
+
+      // don't let the firework stall
+      if (firework.vel < 0.1) firework.alive = false;
+
+      fireballs[i] = firework;
+    } else if (firework.pos >= PIXEL_COUNT) {
+      // kill fireworks off top of stalks
+      firework.alive = false;
+    }
   }
 
   FastLED.show();
 
   // fade out tails and trails
   fadeToBlackBy(&(pixels[0]), PIXEL_COUNT, 32);
+}
 
-  if (firework.pos > PIXEL_COUNT) {
-    // kill and recycle
-    firework = fireworksMakeOne();
+
+/* == BOUNCEBALL == */
+const float BOUNCEBALL_STALK_HEIGHT = 20000; // pretend they are 12 foot high
+
+struct Ball {
+  int hue;
+  float pos;
+  float vel;
+  float accel;
+};
+struct Ball ball;
+
+void bounceballSetup() {
+  ball.hue = (byte)random(256);
+  ball.pos = BOUNCEBALL_STALK_HEIGHT - 0.01;
+  ball.vel = 0;
+  ball.accel = -9.8;
+}
+
+void bounceball() {
+  // clear each frame
+  // fill_solid(&(pixels[0]), PIXEL_COUNT, CRGB(0, 0, 0));
+
+  // map ball position in physical space to pixel array
+  int idx = floor(ball.pos * (PIXEL_COUNT / BOUNCEBALL_STALK_HEIGHT));
+  if (idx >= 0 && idx < PIXEL_COUNT) {
+    // balls are 3px tall - bottom of ball is position
+    pixels[idx] = CHSV(ball.hue, 255, 255);
+
+    // apply physics
+    ball.pos += ball.vel;
+    ball.vel += ball.accel;
+
+    if (ball.pos <= 0) {
+      // bounce!
+      if (ball.vel > -130) {
+        // kill it from bouncing all day
+        ball.vel = 0;
+        ball.pos = 0;
+        ball.accel = 0;
+      } else {
+        ball.vel *= -0.8;
+        ball.pos = -ball.pos;
+      }
+    }
   }
+
+  FastLED.show();
+
+  fadeToBlackBy(&(pixels[0]), PIXEL_COUNT, 32);
+}
+
+
+/* == PLASMA == */
+const float PLASMA_SPEED = 0.01;
+float plasmaAngle = 0;
+
+struct Point {
+  float x;
+  float y;
+};
+
+void plasmaSetup() {
+}
+
+void plasma() {
+  plasmaAngle += PLASMA_SPEED;
+
+  Point p1 = { PIXEL_COUNT * 0.5 * ( 1.0 + sin(plasmaAngle) ), 0.0 };
+  Point p2 = { PIXEL_COUNT * 0.5 * ( 1.0 + sin(plasmaAngle + 1.77) ), 0.0 };
+
+  for (int i = 0; i < PIXEL_COUNT; i++) {
+    float pX = float(i);
+
+    float d1 = sqrt( (pX - p1.x) * (pX - p1.x) + (p1.y * p1.y) );
+    float d2 = sqrt( (pX - p2.x) * (pX - p2.x) + (p2.y * p2.y) );
+
+    float effector = sin(d1 * d1) + 2.0 * 0.5;
+
+    float color1 = d1 * effector;
+    float color2 = d2 * effector;
+    float color3 = 0;
+
+    pixels[i] = CRGB((int)color1, (int)color2, (int)color3);
+  }
+
+  FastLED.show();
 }
 
 
@@ -392,50 +508,93 @@ void fireworks() {
 //   }
 // }
 
-// *** SPARKLE **
-// random pixel position and color ever X random frames
-// fade the effect over time
-// int sparkleChance = 4;
 
-// void sparkle() {
-//   // 1 in X chance to fire off a sparkle
-//   if (random(0, sparkleChance) == 0) {
-//     int idx = random(0, PIXEL_COUNT-1);
-//     int hue = random(0, 355);
-//     pixels[idx] = CHSV(hue, 255, 255);
-//     FastLED.show();
-//   }
-//
-//   fadeLEDs(2);
-// }
+/* == PAPARAZZI == */
+const int PAPARAZZI_FRAME_HOLD = 20; // ms
 
-// *** COMET ***
-/*
-float cometPosition = 0.0;
-float cometVelocity = 84.0;
+void paparazzi() {
+  // clear leds
+  fill_solid(&(pixels[0]), PIXEL_COUNT, CRGB(0, 0, 0));
 
-void comet() {
-  // auto rotate the hue over time
-  int hue = 255.0 * ((sin(elapsed / 12000.0) + 1.0) * 0.5);
+  // pick random leds
+  for (int i = 0; i < 8; i++){
+    int randomNum = random(0, PIXEL_COUNT);
+    setPixel(randomNum, 0xff, 0xff, 0xff);
+  }
 
-  // set LED at current position
-  int idx = (cometPosition/100.0) * PIXEL_COUNT;
-  pixels[idx] = CHSV(hue, 255, 255);
   FastLED.show();
-
-  // create tail effect
-  int bright = random(50, 100);
-  pixels[idx] = CHSV(hue+40, 255, bright);
-  fadeLEDs(8);
-
-  // apply velocity to position - bounce off ends
-  cometPosition += (cometVelocity * timeDelta); // velocity in M/s
-  if (cometPosition > 100) cometVelocity *= -1;
-  if (cometPosition < 0) cometVelocity *= -1;
+  delay(PAPARAZZI_FRAME_HOLD);
 }
-*/
 
-// *** RAINBOW CYCLE ***
+/* == TAKEOFF == */
+void takeOff() {
+  panBar(1, 0, NUM_LEDS);
+  panBar(1, 0, NUM_LEDS, 2);
+  panBar(2, 0, NUM_LEDS, 3);
+  panBar(2, 0, NUM_LEDS, 4);
+  panBar(4, 0, NUM_LEDS, 5);
+  panBar(4, 0, NUM_LEDS, 6);
+  panBar(8, 0, NUM_LEDS, 7);
+  panBar(8, 0, NUM_LEDS, 8);
+  panBar(16, 0, NUM_LEDS, 9);
+  panBar(16, 0, NUM_LEDS, 10);
+  panBar(16, 0, NUM_LEDS, 10);
+  panBar(16, 0, NUM_LEDS, 15);
+  panBar(16, 0, NUM_LEDS, 15);
+  panBar(16, 0, NUM_LEDS, 15);
+  panBar(1, NUM_LEDS, 0);
+}
+
+void panBar(int barWidth, int start, int finish, int fpsMultiplier = 1){
+  //
+  // if( start < finish ){
+  //
+  //   // up
+  //   for(int i=start; i<finish; i++){
+  //     drawBar(barWidth, i);
+  //     runFPS(fpsMultiplier);
+  //   }
+  // }else{
+  //
+  //   // down
+  //   for(int i=start; i>finish; i--){
+  //     drawBar(barWidth, i);
+  //     runFPS(fpsMultiplier);
+  //   }
+  // }
+}
+
+void drawBar(int barWidth, int start) {
+  //
+  // // turn off all leds
+  // for (int k=0; k < NUM_LEDS; k++){
+  //   setPixel(k, 0x00, 0x00, 0x00);
+  // }
+  //
+  // // draw bar
+  // for (int i=start; i < start + barWidth; i++){
+  //   setPixel(i, 0x00, 0xff, 0xff);
+  // }
+  //
+  // showStrip();
+}
+
+
+
+
+
+
+/* == VU METER == */
+void vuMeter() {
+  int peak = audioRMS * PIXEL_COUNT; // RMS = 0 - 1
+  for (int i = 0; i < PIXEL_COUNT; i++) {
+    int hue = ((float)i / (float)PIXEL_COUNT) * 255.0;
+    pixels[i] = CHSV(hue, 255, i < peak ? 255 : 0); // turn on pixels below mapped peak
+  }
+}
+
+
+/* == RAINBOW CYCLE == */
 void rainbowCycle() {
   float angle = (elapsed / 20) % 255; // offset starting angle over time
   float angleStep = 255 / PIXEL_COUNT; // show whole color wheel across strip
@@ -446,9 +605,6 @@ void rainbowCycle() {
 
   FastLED.show();
 }
-
-
-
 
 
 
@@ -503,6 +659,10 @@ void updateModeDisplay(u_int newValue) {
 
 
 // === Utility Functions ===
+void setPixel(int idx, byte r, byte g, byte b) {
+  pixels[idx] = CRGB(r, g, b);
+}
+
 float lerp(float start, float end, float percent) {
   return start + percent * (end - start);
 }
