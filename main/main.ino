@@ -143,7 +143,7 @@ void holdFrame(float fpsMultiplier) {
 // =============================================================================
 // === ANIMATIONS ==============================================================
 // =============================================================================
-const int ANIMATION_COUNT = 8;
+const int ANIMATION_COUNT = 16;
 typedef enum {
   CONVERGE,
   PANBACKFORTH,
@@ -151,10 +151,11 @@ typedef enum {
   TAKEOFF,
   STEPPER,
   THREEBARS,
-
-
-  // VEGAS,
-
+  RANDOMFADINGBARS,
+  VEGAS,
+  KITT,
+  // RAIN,
+  BLACKOUT,
   // ===========
   FIREWORK,
   INTERFERENCE,
@@ -165,19 +166,19 @@ typedef enum {
 
   RAINBOW,
 } ANIMATIONS;
-int currentAnimationIdx = 5;
+int currentAnimationIdx = 0;
 
 void runCurrentAnimation() {
-  // // AUTO MODE - cycle animations randomly
-  // if (ANIMATION_COUNT == 1) {
-  //   currentAnimationIdx = 0;
-  // } else {
-  //   int tryIndex;
-  //   do {
-  //     tryIndex = random(0, ANIMATION_COUNT);
-  //   } while (tryIndex == currentAnimationIdx);
-  //   currentAnimationIdx = tryIndex;
-  // }
+  // AUTO MODE - cycle animations randomly
+  if (ANIMATION_COUNT == 1) {
+    currentAnimationIdx = 0;
+  } else {
+    int tryIndex;
+    do {
+      tryIndex = random(0, ANIMATION_COUNT);
+    } while (tryIndex == currentAnimationIdx);
+    currentAnimationIdx = tryIndex;
+  }
 
   int loop = 0;
   switch(currentAnimationIdx) {
@@ -202,29 +203,27 @@ void runCurrentAnimation() {
       for (; loop < 300; ++loop)
         threeBars();
       break;
-
-
-
-
-
-    // case VEGAS:
-    //   // for (; loop < 2; ++loop)
-    //   //   vegas();
+    case RANDOMFADINGBARS:
+      for (; loop < 14; ++loop)
+        randomFadingBars();
+      break;
+    case VEGAS:
+      for (; loop < 2; ++loop)
+        vegas();
+      break;
+    case KITT:
+      for (; loop < 4; ++loop)
+        kitt();
+      break;
+    // case RAIN:
+    //   for (; loop < 10; ++loop)
+    //     rain();
     //   break;
-
-
-
-    // case TAKEOFF:
-    //   takeOff();
-    //   break;
-    //
-    // case PANBARFULL:
-    //   panBarFull();
-    //   break;
-
-
-
-
+    case BLACKOUT:
+      for (; loop < 8; ++loop)
+        blackout();
+      break;
+    //=========================
     case FIREWORK:
       for(; loop < 800; ++loop)
         fireworks();
@@ -249,7 +248,7 @@ void runCurrentAnimation() {
       break;
     case VUMOVER:
       vumoverSetup();
-      for(; loop < 800; ++loop)
+      for(; loop < 600; ++loop)
         vuMover();
       break;
 
@@ -418,49 +417,178 @@ void threeBars() {
 
 /* == RANDOMFADINGBARS == */
 void randomFadingBars() {
+  int p = random(0,NUM_LEDS);
+  int s = random(6, 20);
 
+  for(int i=0; i<255; i=i+15){
+    for(int k=p; k<p+s; k++){
+      setPixel(k, float(0), float(0), float(i));
+    }
+    showStrip();
+    holdFrame();
+  }
 
-  
+  for(int i=255; i>0; i=i-15){
+    for(int k=p; k<p+s; k++){
+      setPixel(k, float(0), float(0), float(i));
+    }
+    showStrip();
+    holdFrame();
+  }
 
+  //reset all
+  fill_solid(&(pixels[0]), NUM_LEDS, CRGB(0, 0, 0));
 }
 
-
-
-
-
-
-/*
-.
-.
-.
-*/
 
 /* == VEGAS == */
 void vegas() {
-    // teal
-    red = 0; green = 255; blue = 100;
+  // teal
+  red = 0; green = 255; blue = 100;
 
-    panBar(4, NUM_LEDS, 0, 1, false);
+  panBar(4, NUM_LEDS, 0, 1, false);
+  delay(100);
+
+  for (int i = 0; i < NUM_LEDS; i = i+8) {
+    drawBar(4, i, false);
     delay(100);
+  }
 
-    for (int i = 0; i < NUM_LEDS; i = i+8) {
-      drawBar(4, i, false);
-      delay(100);
-    }
+  //magenta
+  red = 255; green = 0; blue = 37;
+  panBar(1, NUM_LEDS, -1, 1, false);
 
-    // //magenta
-    // red = 255; green = 0; blue = 37;
-    // panBar(1, NUM_LEDS, -1, 1, false);
-    //
-    // red = 0; green = 0; blue = 0;
-    // for(int i=0; i<NUM_LEDS; i=i+8){
-    //   drawBar(4, i, false);
-    //   delay(100);
-    // }
-
+  red = 0; green = 0; blue = 0;
+  for(int i=0; i<NUM_LEDS; i=i+8){
+    drawBar(4, i, false);
+    delay(100);
+  }
 }
 
 
+/* == KITT == */
+void kitt() {
+  for(int i=0; i<NUM_LEDS/2; i++){
+
+    //purple
+    red = 50; green = 30; blue = 150;
+    drawBar(1, i, false);
+    drawBar(1, NUM_LEDS - 1 - i, false);
+    delay(30);
+  }
+
+  for(int i=NUM_LEDS/2; i>=0; i--){
+
+    //black
+    red = 0; green = 0; blue = 0;
+    drawBar(1, i, false);
+    drawBar(1, NUM_LEDS - 1 - i, false);
+    delay(30);
+  }
+
+  for(int i=NUM_LEDS/2; i>=0; i--){
+
+    //orange
+    red = 250; green = 50; blue = 0;
+    drawBar(1, i, false);
+    drawBar(1, NUM_LEDS - 1 - i, false);
+    delay(30);
+  }
+
+  for(int i=0; i<NUM_LEDS/2; i++){
+
+    //black
+    red = 0; green = 0; blue = 0;
+    drawBar(1, i, false);
+    drawBar(1, NUM_LEDS - 1 - i, false);
+    delay(30);
+  }
+}
+
+
+/* == RAIN == */
+void rain() {
+int randomSize = random(6, 16);
+int randomStart = random(0, NUM_LEDS);
+
+//teal
+red = 0; green = 255; blue = 100;
+
+for(int i=randomStart; i>randomStart - randomSize; i--){
+drawBar(1, i, false);
+delay(20);
+}
+
+randomSize = random(6, 16);
+randomStart = randomStart - randomSize;
+
+//blue
+red = 0; green = 50; blue = 200;
+
+for(int i=randomStart; i>randomStart - randomSize; i--){
+drawBar(1, i, false);
+delay(20);
+}
+
+randomSize = random(6, 16);
+randomStart = random(0, NUM_LEDS);
+
+//black
+red = 0; green = 0; blue = 0;
+
+for(int i=randomStart; i>randomStart - randomSize; i--){
+drawBar(1, i, false);
+delay(20);
+}
+
+// random clearing
+int seed = random(0,100);
+
+if(seed > 85){
+
+//black
+red = 0; green = 0; blue = 0;
+
+for(int i=0; i<NUM_LEDS; i++){
+  drawBar(1, i, false);
+  delay(15);
+}
+}
+
+//violet
+red = 200; green = 50; blue = 250;
+
+for(int i=randomStart; i>randomStart - randomSize; i--){
+drawBar(1, i, false);
+delay(20);
+}
+
+randomSize = random(6, 16);
+randomStart = random(0, NUM_LEDS);
+
+//black
+red = 0; green = 0; blue = 0;
+
+for(int i=randomStart; i>randomStart - randomSize; i--){
+drawBar(1, i, false);
+delay(20);
+}
+}
+
+
+/* == BLACKOUT == */
+void blackout() {
+  for(int j=0; j<255; j++){
+    setAll(j,j/5,j);
+    delay(2);
+  }
+
+  for(int k=0; k<NUM_LEDS * 2; k++){
+    red = 0; green = 0; blue = 0;
+    drawBar(1, random(0,NUM_LEDS), false);
+    delay(2);
+  }
+}
 
 
 /* == BEN'S ANIMATION HELPERS == */
@@ -512,6 +640,11 @@ void chooseRandomColor() {
 }
 
 void showStrip() {
+  FastLED.show();
+}
+
+void setAll(byte red, byte green, byte blue) {
+  fill_solid(&(pixels[0]), NUM_LEDS, CRGB(red, green, blue));
   FastLED.show();
 }
 
@@ -645,7 +778,7 @@ void interference() {
 
 // *** FIRE ***
 // http://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#fire
-const int FIRE_COOLING = 55;
+const int FIRE_COOLING = 45;
 const int FIRE_SPARK_CHANCE_MAX = 190;
 const int FIRE_SPARK_CHANCE_MIN = 120;
 
@@ -764,15 +897,15 @@ void plasma() {
     float d2 = sqrt( (pX - p2.x) * (pX - p2.x) + (p2.y * p2.y) );
     float d3 = sqrt( (pX - p3.x) * (pX - p3.x) + (p3.y * p3.y) );
 
-    float color1 = 0.75 * d1 * d1;
-    float color2 = 0.75 * d2 * d2;
-    float color3 = 0.75 * d3 * d3;
+    float color1 = 0.3 * d1 * d1;
+    float color2 = 0.3 * d2 * d2;
+    float color3 = 0.3 * d3 * d3;
 
     pixels[i] = CRGB((int)color1, (int)color2, (int)color3);
   }
 
   FastLED.show();
-  holdFrame(0.75);
+  holdFrame(0.5);
 }
 
 
@@ -796,7 +929,7 @@ void vuMover() {
   float bri;
   for (int i = 0; i < PIXEL_COUNT; i++) {
     bri = map(sin(angle), -1.0, 1.0, 0.0, 200.0);
-    pixels[i] += CHSV(0, 128+bri*0.5, bri); // additive
+    pixels[i] += CHSV(vumoverHue1, 128+bri*0.5, bri); // additive
     angle -= VUMOVER_ANGLE_SWEEP;
   }
 
@@ -804,7 +937,7 @@ void vuMover() {
   angle = vumoverAngle + PI/2.0;
   for (int i = 0; i < PIXEL_COUNT; i++) {
     bri = map(sin(angle), -1.0, 1.0, 0.0, 200.0);
-    pixels[i] += CHSV(128, 128+bri*0.5, bri); // additive
+    pixels[i] += CHSV(vumoverHue2, 128+bri*0.5, bri); // additive
     angle += VUMOVER_ANGLE_SWEEP; // sweep opposite direction
   }
 
