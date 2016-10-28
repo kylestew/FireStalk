@@ -3,21 +3,23 @@
  * == FireStalk ==
  * ===============
  */
+#define FASTLED_ALLOW_INTERRUPTS 0    // FastLED and
+
 #include <FastLED.h>
 #include "RingCoder.h"
 #include "Audio.h"
 
 
-#define SERIAL_DEBUG        true
+#define SERIAL_DEBUG        false
 
 /* Status LED */
 const int STATUS_LED = 13;
 
 /* Pixels */
-const int MAX_PIXEL_BRIGHTNESS = 204; // 4/5th total
-int brightness = MAX_PIXEL_BRIGHTNESS / 2;
-
-const int PIXEL_COUNT = 40;
+const int MAX_PIXEL_BRIGHTNESS = 230;
+int brightness = MAX_PIXEL_BRIGHTNESS / 4;
+const int PIXEL_COUNT = 60;
+const int NUM_LEDS = 60;
 const int PIXEL_STRAND_0 = 11;
 const int PIXEL_STRAND_1 = 12;
 CRGB pixels[PIXEL_COUNT]; // mirrored
@@ -38,30 +40,23 @@ const int EN = 10;
 RingCoder ringcoder = RingCoder(ENCB, ENCA, LEDR, LEDB, LEDG, ENC_SW, DAT, CLR, CLK, LATCH, EN);
 
 /* Audio FFT Sampling */
-float fftGain = 8.0;
-const float FFT_GAIN_MIN = 1;             // min audio gain slider
-const float FFT_GAIN_MAX = 12;            // max audio gain slider
-const float FFT_LERP = 0.4;              // smooth out FFT value changes
-const double RMS_GAIN_MULT = 0.333;         // RMS audio power adjustment ties to FFT
-const float RMS_LERP = 0.02;              // smooth out RMS value changes
-AudioInputAnalog        adc; // A2 - pin 16
+const float AUDIO_GAIN_MIN = 1.0;
+const float AUDIO_GAIN_MAX = 32.0;
+float audioGain = 24.0;
+AudioInputAnalog        adc; // default: A2 - pin 16
 AudioAnalyzeRMS         rms;
-// AudioAnalyzeFFT1024     fft;
-// AudioConnection         patchCord1(adc, fft);
 AudioConnection         patchCord2(adc, rms);
-const int FREQUENCY_FILTER_RANGE = 64;
 double audioRMS = 0.0;
-float freqMagnitudes[FREQUENCY_FILTER_RANGE];
+
+/* Animation Globals */
+const int BASE_ANIMATION_FRAME_HOLD = 20; // 50 fps
+float animationSpeedMultiplier = 1.0;
+elapsedMillis elapsed;
 
 /* Mode */
 int controlMode = 0;    // 0 (BLU) == set ANIMATION mode
                         // 1 (GRN) == set LED brightness
                         // 2 (RED) == set FFT gain
-
-/* Animations Timing */
-const int ANIMATION_MAX_FPS = 14;  // about 72 FPS (remember FFT has limit of about 86 samples per second)
-elapsedMillis fps;
-elapsedMillis elapsed;
 
 
 // === LIFECYCLE ===
@@ -86,21 +81,25 @@ void setup() {
 
   // boot animation on ring coder
   ringcoder.setKnobRgb(255, 0, 255);
-  ringcoder.spin();
 
   // audio processing
-  AudioMemory(8);
-  // fft.windowFunction(AudioWindowHanning1024);
+  AudioMemory(2);
 
   // set control mode
   setMode(0);
 }
 
-int serialReadIndex = 0;
-int serialColorIndex = 0;
-
 void loop() {
-  // DON'T BLOCK MAIN LOOP
+  // main loop blocked by animations - each animation needs to call a special
+  // update function to make sure important polling code is handled
+  runCurrentAnimation();
+}
+
+void holdFrame() {
+  holdFrame(1);
+}
+
+void holdFrame(float fpsMultiplier) {
   // ring coder is a polling input
   // watch for button changes
   if (ringcoder.update() && ringcoder.button() == HIGH) {
@@ -116,163 +115,408 @@ void loop() {
     updateModeDisplay(encValue);
   }
 
-  // throttle visual updates to a set FPS
-  if (fps < ANIMATION_MAX_FPS) {
-    FastLED.delay(8);
-    return;
-  }
-  fps = 0; // reset - fps variale automatically counts up
-
-  // process new Peak value
+  // process new audio Peak value
   if (rms.available()) {
-     audioRMS = rms.read() * (fftGain * RMS_GAIN_MULT); // dail in fft and RMS at same time
+    // audio hits hard upwards and tails down
+    double val = rms.read() * (0.333 * audioGain);
+    if (val > audioRMS)
+      audioRMS = val;
+    else
+      audioRMS = lerp(audioRMS, (float)val, 0.05);
   }
-
-  /*
-  // process new FFT values
-  if (fft.available()) {
-    // each bin is 43Hz - sample from 0Hz to 2752Hz (0 - 64)
-    for (int i = 0; i < FREQUENCY_FILTER_RANGE; i++) {
-      // normalize freq values across spectrum
-      float val = fft.read(i);
-      if (val < 0.005) val = 0;
-      freqMagnitudes[i] = lerp(freqMagnitudes[i], val * fftGain * (log(i+1) + 1.0), FFT_LERP);
-    }
-  }
-  */
-
-  runCurrentAnimation();
 
   // output values for Processing prototype visualization
   if (SERIAL_DEBUG) {
     Serial.println(audioRMS);
 
-    // spit all pixel values to serial
-    // int i;
-    // for (i = 0; i < PIXEL_COUNT; i++) {
-    //   Serial.print(pixels[i].r);
-    //   Serial.print(" ");
-    //   Serial.print(pixels[i].g);
-    //   Serial.print(" ");
-    //   Serial.print(pixels[i].b);
-    //   Serial.print(" ");
-    // }
-
-    // spit all fft values to serial
-    // for (i = 0; i < FREQUENCY_FILTER_RANGE; i++) {
-      // Serial.print(freqMagnitudes[i]);
-      // Serial.print(" ");
-    // }
+    // Serial.print(animationSpeedMultiplier);
+    // Serial.print(" ");
+    // Serial.print(audioGain);
     // Serial.println();
   }
+
+  // apply animation timing multiplier
+  float mult = (1.0 / animationSpeedMultiplier) / fpsMultiplier;
+  FastLED.delay((int)(BASE_ANIMATION_FRAME_HOLD * mult));
 }
 
 // =============================================================================
 // === ANIMATIONS ==============================================================
 // =============================================================================
-const int ANIMATION_COUNT = 4;
+const int ANIMATION_COUNT = 8;
 typedef enum {
-  FIREWORKS, // (audio)
-  INTERFERENCE,
-  FIRE, // (audio)
-  // BOUNCEBALL,
-  // PLASMA,
-  // RAIN
-  // VU_METER_WAVE_WALKER - speed adjusts with RMS volume
-
-  // BEN's animations
+  CONVERGE,
+  PANBACKFORTH,
   PAPARAZZI,
-  PANBARFULL,
   TAKEOFF,
+  STEPPER,
+  THREEBARS,
 
 
-  // VUMETER,
+  // VEGAS,
+
+  // ===========
+  FIREWORK,
+  INTERFERENCE,
+  FIRE,
+  BOUNCEBALL,
+  PLASMA,
+  VUMOVER,
+
   RAINBOW,
 } ANIMATIONS;
-int selectedAnimation = 0; // AUTO MODE is default
-int currentAnimationIdx = 0;
-
-const int AUTO_ANIMATION_CYCLE_TIME = 12000; // 12 seconds
-int autoAnimationLastCycleTime = 0;
-
-long frameCount = 0;
-unsigned int prevElapsed;
-double timeDelta; // fractions of a second
-
-void switchAnimation(int newValue) {
-  selectedAnimation = newValue;
-  if (selectedAnimation == 0) {
-    // start auto mode loop
-    currentAnimationIdx = 0;
-    autoAnimationLastCycleTime = millis();
-  } else {
-    // index into animation list
-    currentAnimationIdx = selectedAnimation - 1;
-  }
-}
+int currentAnimationIdx = 5;
 
 void runCurrentAnimation() {
-  if (frameCount == 0) {
-    // skip first frame to setup time delta
-    prevElapsed = elapsed;
-    frameCount++;
-    return;
-  }
+  // // AUTO MODE - cycle animations randomly
+  // if (ANIMATION_COUNT == 1) {
+  //   currentAnimationIdx = 0;
+  // } else {
+  //   int tryIndex;
+  //   do {
+  //     tryIndex = random(0, ANIMATION_COUNT);
+  //   } while (tryIndex == currentAnimationIdx);
+  //   currentAnimationIdx = tryIndex;
+  // }
 
-  // AUTO MODE - cycle animations
-  if (selectedAnimation == 0 && millis() - autoAnimationLastCycleTime > AUTO_ANIMATION_CYCLE_TIME) {
-    autoAnimationLastCycleTime = millis();
-    currentAnimationIdx++;
-    if (currentAnimationIdx > ANIMATION_COUNT) currentAnimationIdx = 0;
-  }
-
-  // time delta (in seconds) since last frame
-  timeDelta = (elapsed - prevElapsed) / 1000.0; // convert to seconds
-
+  int loop = 0;
   switch(currentAnimationIdx) {
-    case FIREWORKS:
-      fireworks();
+    case CONVERGE:
+      converge();
       break;
-    case INTERFERENCE:
-      interference();
+    case PANBACKFORTH:
+      panBarBackForth();
       break;
-    case FIRE:
-      firewalkwithme();
-      break;
-
-    // case BOUNCEBALL:
-    //   bounceball();
-    //   break;
-    // case PLASMA:
-    //   plasma();
-    //   break;
-
-    // == BEN ==========
     case PAPARAZZI:
-      paparazzi();
+      for (; loop < 200; ++loop)
+        paparazzi();
       break;
-
     case TAKEOFF:
       takeOff();
       break;
-
-    case PANBARFULL:
-      panBarFull();
+    case STEPPER:
+      for (; loop < 2; ++loop)
+        stepper();
+      break;
+    case THREEBARS:
+      for (; loop < 300; ++loop)
+        threeBars();
       break;
 
-    // =================
 
-    // case VUMETER:
-    //   vuMeter();
+
+
+
+    // case VEGAS:
+    //   // for (; loop < 2; ++loop)
+    //   //   vegas();
     //   break;
+
+
+
+    // case TAKEOFF:
+    //   takeOff();
+    //   break;
+    //
+    // case PANBARFULL:
+    //   panBarFull();
+    //   break;
+
+
+
+
+    case FIREWORK:
+      for(; loop < 800; ++loop)
+        fireworks();
+      break;
+    case INTERFERENCE:
+      interferenceSetup();
+      for(; loop < 600; ++loop)
+        interference();
+      break;
+    case FIRE:
+      for(; loop < 400; ++loop)
+        firewalkwithme();
+      break;
+    case BOUNCEBALL:
+      bounceballSetup();
+      for(; loop < 600; ++loop)
+        bounceball();
+      break;
+    case PLASMA:
+      for(; loop < 600; ++loop)
+        plasma();
+      break;
+    case VUMOVER:
+      vumoverSetup();
+      for(; loop < 800; ++loop)
+        vuMover();
+      break;
+
     case RAINBOW:
     default:
-      rainbowCycle();
+      for (; loop < 100; ++loop)
+        rainbowCycle();
+  }
+}
+
+
+// some fun globals I don't quite understand
+int bluey = 0;
+int redy = 54;
+int greeny = 20;
+int red = 0;
+int green = 255;
+int blue = 0;
+
+// color palette
+byte colors[8][3] = { {0, 0, 255},   // blue
+                    {255, 255, 255}, // white
+                    {0, 255, 100},   // teal
+                    {200, 50, 250},  // violet
+                    {50, 30, 150},   // purple
+                    {250, 50, 0},    // orange
+                    {0, 255, 50},    // green
+                    {0, 255, 255} }; // light blue
+
+
+/* == CONVERGE == */
+void converge() {
+  chooseRandomColor();
+
+  panBar(1, 0, NUM_LEDS / 2);
+  delay(300);
+  panBar(1, NUM_LEDS-1, NUM_LEDS / 2 - 1);
+  delay(300);
+  panBar(1, NUM_LEDS / 4, (NUM_LEDS / 4) * 3);
+  delay(300);
+  panBar(1, (NUM_LEDS / 4) * 3, NUM_LEDS / 4);
+  delay(300);
+  panBar(1, 0, NUM_LEDS, 2);
+  delay(150);
+  panBar(1, 0, NUM_LEDS, 2);
+  delay(150);
+  panBar(1, NUM_LEDS, 0, 4);
+  panBar(1, NUM_LEDS, 0, 4);
+  panBar(1, NUM_LEDS, 0, 4);
+  // panBar(NUM_LEDS, NUM_LEDS, 0, 4);
+  // delay(300);
+}
+
+
+/* == PAPARAZZI == */
+void paparazzi() {
+  // pick random leds
+  for (int i = 0; i < 3; i++) {
+    int randomNum = random(0, PIXEL_COUNT);
+    setPixel(randomNum, 0xff, 0xff, 0xff);
   }
 
-  prevElapsed = elapsed;
-  frameCount++;
+  FastLED.show();
+
+  // fade out
+  holdFrame(0.5);
+  fadeToBlackBy(&(pixels[0]), PIXEL_COUNT, 120);
 }
+
+/* == PANBAR == */
+const int PANBAR_BAR_SIZE = 6;
+
+void panBarBackForth() {
+  // pan up
+  for (int k = 0; k < NUM_LEDS - PANBAR_BAR_SIZE; k++) {
+    fadeToBlackBy(&(pixels[0]), PIXEL_COUNT, 80);
+    fill_solid(&(pixels[k]), PANBAR_BAR_SIZE, CRGB(255, 255, 255));
+    FastLED.show();
+    holdFrame(1);
+  }
+
+  // pan down
+  for (int k = NUM_LEDS - PANBAR_BAR_SIZE; k > 0; k--) {
+    fadeToBlackBy(&(pixels[0]), PIXEL_COUNT, 80);
+    fill_solid(&(pixels[k]), PANBAR_BAR_SIZE, CRGB(255, 255, 255));
+    FastLED.show();
+    holdFrame(1);
+  }
+}
+
+/* == TAKEOFF == */
+void takeOff() {
+  chooseRandomColor();
+
+  panBar(1, 0, NUM_LEDS);
+  panBar(1, 0, NUM_LEDS, 2);
+  panBar(2, 0, NUM_LEDS, 3);
+  panBar(2, 0, NUM_LEDS, 4);
+  panBar(4, 0, NUM_LEDS, 5);
+  panBar(4, 0, NUM_LEDS, 6);
+  panBar(8, 0, NUM_LEDS, 7);
+  panBar(8, 0, NUM_LEDS, 8);
+  panBar(16, 0, NUM_LEDS, 9);
+  panBar(16, 0, NUM_LEDS, 10);
+  panBar(16, 0, NUM_LEDS, 10);
+  panBar(16, 0, NUM_LEDS, 15);
+  panBar(16, 0, NUM_LEDS, 15);
+  panBar(16, 0, NUM_LEDS, 15);
+  panBar(1, NUM_LEDS, 0);
+}
+
+
+/* == STEPPER == */
+void stepper() {
+  chooseRandomColor();
+
+  panBar(1, 0, NUM_LEDS / 4);
+  delay(300);
+  panBar(1, NUM_LEDS / 4, NUM_LEDS / 2);
+  delay(300);
+  panBar(1, NUM_LEDS / 2, NUM_LEDS / 1.33);
+  delay(300);
+  panBar(1, NUM_LEDS / 1.33, NUM_LEDS);
+  panBar(1, NUM_LEDS, 1, 40);
+}
+
+
+/* == THREEBARS == */
+void threeBars() {
+  // blue
+  for (int k=bluey; k < bluey + 3; k++){
+    setPixel(k, float(0), float(0), float(256));
+  }
+
+  // red
+  for (int i=redy; i < redy + 6; i++){
+    setPixel(i, 0xFF, 0x00, 0x00);
+  }
+
+  // green
+  setPixel(greeny, 0x00, 0xFF, 0x00);
+
+  showStrip();
+  holdFrame();
+
+  //clear
+  for(int i=0; i<NUM_LEDS; i++){
+    setPixel(i, 0x00, 0x00, 0x00);
+  }
+
+  bluey = bluey + 1.5;
+  redy --;
+  greeny = greeny + 2;
+
+  if(bluey >= NUM_LEDS-1){
+    bluey = -6;
+  }
+  if(redy <= -6){
+    redy= NUM_LEDS-1;
+  }
+  if(greeny > NUM_LEDS-1){
+    greeny = 0;
+  }
+}
+
+
+/* == RANDOMFADINGBARS == */
+void randomFadingBars() {
+
+
+  
+
+}
+
+
+
+
+
+
+/*
+.
+.
+.
+*/
+
+/* == VEGAS == */
+void vegas() {
+    // teal
+    red = 0; green = 255; blue = 100;
+
+    panBar(4, NUM_LEDS, 0, 1, false);
+    delay(100);
+
+    for (int i = 0; i < NUM_LEDS; i = i+8) {
+      drawBar(4, i, false);
+      delay(100);
+    }
+
+    // //magenta
+    // red = 255; green = 0; blue = 37;
+    // panBar(1, NUM_LEDS, -1, 1, false);
+    //
+    // red = 0; green = 0; blue = 0;
+    // for(int i=0; i<NUM_LEDS; i=i+8){
+    //   drawBar(4, i, false);
+    //   delay(100);
+    // }
+
+}
+
+
+
+
+/* == BEN'S ANIMATION HELPERS == */
+void panBar(int barWidth, int start, int finish) {
+  panBar(barWidth, start, finish, 1, true);
+}
+
+void panBar(int barWidth, int start, int finish, int fpsMultiplier) {
+  panBar(barWidth, start, finish, fpsMultiplier, true);
+}
+
+void panBar(int barWidth, int start, int finish, int fpsMultiplier, boolean clearAll) {
+  if (start < finish) {
+    // up
+    for (int i = start; i < finish; i++) {
+      drawBar(barWidth, i, clearAll);
+      holdFrame(fpsMultiplier);
+    }
+  } else {
+    // down
+    for (int i = start; i > finish; i--) {
+      drawBar(barWidth, i, clearAll);
+      holdFrame(fpsMultiplier);
+    }
+  }
+}
+
+void drawBar(int barWidth, int start, boolean clearAll) {
+  if (clearAll){
+    // turn off all leds
+    // fill_solid(&(pixels[0]), PIXEL_COUNT, CRGB(0, 0, 0));
+    fadeToBlackBy(&(pixels[0]), PIXEL_COUNT, 200);
+  }
+
+  // draw bar
+  for (int i=start; i < start + barWidth; i++){
+    setPixel(i, red, green, blue);
+  }
+
+  FastLED.show();
+}
+
+void chooseRandomColor() {
+  // pick random color
+  int randomColor = random(0, 8); // 0-7
+  red = colors[randomColor][0];
+  green = colors[randomColor][1];
+  blue = colors[randomColor][2];
+}
+
+void showStrip() {
+  FastLED.show();
+}
+
+
+// =============================================================================
 
 
 /* == FIREWORKS == */
@@ -285,9 +529,9 @@ struct Firework {
 };
 
 const int FIREWORK_MAX_VISIBLE = 12;
-const int FIREWORK_MAX_EJECT_TIME = 1400;
+const int FIREWORK_MAX_EJECT_TIME = 800;
 const int FIREWORK_MIN_EJECT_TIME = 200;
-const float FIREWORK_AUDIO_THRESHOLD = 0.575;
+const float FIREWORK_AUDIO_THRESHOLD = 0.8;
 long lastFireballEjectMillis = 0;
 Firework fireballs[FIREWORK_MAX_VISIBLE];
 int fireworkIndex = 0;
@@ -298,7 +542,7 @@ void ejectFireball() {
   f.hue = (byte)random(256);
   f.pos = 0;
   // f.vel = 0.9 + random(1000)/500.0;
-  f.vel = 0.5 + (random(100) / 100.0) + (audioRMS * 1.4);
+  f.vel = 0.6 + (random(100) / 100.0) + (audioRMS * 1.5);
   f.decel = 0.972;
   fireballs[fireworkIndex++] = f;
   if (fireworkIndex > FIREWORK_MAX_VISIBLE - 1)
@@ -311,7 +555,7 @@ void fireworks() {
   // don't always wait for audio hits
   if (elapsed - lastFireballEjectMillis > FIREWORK_MAX_EJECT_TIME) {
     ejectFireball();
-  } else if (audioRMS > FIREWORK_AUDIO_THRESHOLD && FIREWORK_MIN_EJECT_TIME) {
+  } else if (audioRMS > FIREWORK_AUDIO_THRESHOLD && elapsed - lastFireballEjectMillis > FIREWORK_MIN_EJECT_TIME) {
     // audio hit - eject
     ejectFireball();
   }
@@ -350,17 +594,25 @@ void fireworks() {
 
   // fade out tails and trails
   fadeToBlackBy(&(pixels[0]), PIXEL_COUNT, 32);
+
+  holdFrame();
 }
 
 
 /* == INTERFERENCE == */
 // color bands caused by interference patterns of overlapping waves
 // https://i.ytimg.com/vi/sXlYmLQdJU4/maxresdefault.jpg
-
-const float INTERFERENCE_ANGLE_SWEEP = 0.6;
+const float INTERFERENCE_ANGLE_SWEEP = 0.75;
 const float INTERFERENCE_SPEED = 0.3;
+int interferenceHue1;
+int interferenceHue2;
 float interferenceWave1 = 0;
 float interferenceWave2 = 0;
+
+void interferenceSetup() {
+  interferenceHue1 = random(0, 255);
+  interferenceHue2 = random(0, 255);
+}
 
 void interference() {
   // clear frame
@@ -371,33 +623,31 @@ void interference() {
   float bri;
   for (int i = 0; i < PIXEL_COUNT; i++) {
     bri = map(sin(angle), -1.0, 1.0, 0.0, 200.0);
-    pixels[i] += CHSV(0, 128+bri*0.5, bri); // additive
+    pixels[i] += CHSV(interferenceHue1, 128+bri*0.5, bri); // additive
     angle += INTERFERENCE_ANGLE_SWEEP;
-    Serial.println(bri);
   }
 
   // wave 2 - sine with PI/2 phase angle
   angle = interferenceWave2;
   for (int i = 0; i < PIXEL_COUNT; i++) {
     bri = map(sin(angle), -1.0, 1.0, 0.0, 200.0);
-    pixels[i] += CHSV(128, 128+bri*0.5, bri); // additive
+    pixels[i] += CHSV(interferenceHue2, 128+bri*0.5, bri); // additive
     angle += INTERFERENCE_ANGLE_SWEEP; // sweep opposite direction
-    Serial.println(bri);
   }
-
-  FastLED.show();
 
   interferenceWave1 += INTERFERENCE_SPEED;
   interferenceWave2 += INTERFERENCE_SPEED * 1.05;
+
+  FastLED.show();
+  holdFrame();
 }
 
 
 // *** FIRE ***
 // http://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#fire
 const int FIRE_COOLING = 55;
-const int FIRE_SPARK_CHANCE_MAX = 180;
-const int FIRE_SPARK_CHANCE_MIN = 40;
-const int FIRE_FRAME_HOLD = 30; // ms
+const int FIRE_SPARK_CHANCE_MAX = 190;
+const int FIRE_SPARK_CHANCE_MIN = 120;
 
 void firewalkwithme() {
   static byte heat[PIXEL_COUNT];
@@ -405,7 +655,6 @@ void firewalkwithme() {
 
   // 1: cool down every cell a little
   for (int i = 0; i < PIXEL_COUNT; i++) {
-    // ??? what is happening here
     cooldown = random(0, ((FIRE_COOLING * 10) / PIXEL_COUNT) + 2);
 
     if (cooldown > heat[i]) {
@@ -436,12 +685,12 @@ void firewalkwithme() {
   }
 
   FastLED.show();
-  delay(FIRE_FRAME_HOLD);
+  holdFrame(0.6);
 }
 
 
 /* == BOUNCEBALL == */
-const float BOUNCEBALL_STALK_HEIGHT = 20000; // pretend they are 12 foot high
+const float BOUNCEBALL_STALK_HEIGHT = 30000; // pretend they are 12 foot high
 
 struct Ball {
   int hue;
@@ -459,9 +708,6 @@ void bounceballSetup() {
 }
 
 void bounceball() {
-  // clear each frame
-  // fill_solid(&(pixels[0]), PIXEL_COUNT, CRGB(0, 0, 0));
-
   // map ball position in physical space to pixel array
   int idx = floor(ball.pos * (PIXEL_COUNT / BOUNCEBALL_STALK_HEIGHT));
   if (idx >= 0 && idx < PIXEL_COUNT) {
@@ -474,7 +720,7 @@ void bounceball() {
 
     if (ball.pos <= 0) {
       // bounce!
-      if (ball.vel > -130) {
+      if (ball.vel > -10) {
         // kill it from bouncing all day
         ball.vel = 0;
         ball.pos = 0;
@@ -487,13 +733,15 @@ void bounceball() {
   }
 
   FastLED.show();
+  holdFrame(3.0);
 
   fadeToBlackBy(&(pixels[0]), PIXEL_COUNT, 32);
 }
 
 
 /* == PLASMA == */
-const float PLASMA_SPEED = 0.01;
+// https://github.com/johncarl81/neopixelplasma
+const float PLASMA_SPEED = 0.03;
 float plasmaAngle = 0;
 
 struct Point {
@@ -501,150 +749,75 @@ struct Point {
   float y;
 };
 
-void plasmaSetup() {
-}
-
 void plasma() {
   plasmaAngle += PLASMA_SPEED;
 
-  Point p1 = { PIXEL_COUNT * 0.5 * ( 1.0 + sin(plasmaAngle) ), 0.0 };
-  Point p2 = { PIXEL_COUNT * 0.5 * ( 1.0 + sin(plasmaAngle + 1.77) ), 0.0 };
+  float halfPixels = PIXEL_COUNT * 0.5;
+  Point p1 = { halfPixels * (float)( 1.0 + sin(plasmaAngle * 1.000) ), (float)(sin(plasmaAngle*1.310)+1.0) * 0.3 * halfPixels };
+  Point p2 = { halfPixels * (float)( 1.0 + sin(plasmaAngle * 1.770) ), (float)(sin(plasmaAngle*2.865)+1.0) * 0.3 * halfPixels };
+  Point p3 = { halfPixels * (float)( 1.0 + sin(plasmaAngle * 0.250) ), (float)(sin(plasmaAngle*0.750)+1.0) * 0.3 * halfPixels };
 
   for (int i = 0; i < PIXEL_COUNT; i++) {
     float pX = float(i);
 
     float d1 = sqrt( (pX - p1.x) * (pX - p1.x) + (p1.y * p1.y) );
     float d2 = sqrt( (pX - p2.x) * (pX - p2.x) + (p2.y * p2.y) );
+    float d3 = sqrt( (pX - p3.x) * (pX - p3.x) + (p3.y * p3.y) );
 
-    float effector = sin(d1 * d1) + 2.0 * 0.5;
-
-    float color1 = d1 * effector;
-    float color2 = d2 * effector;
-    float color3 = 0;
+    float color1 = 0.75 * d1 * d1;
+    float color2 = 0.75 * d2 * d2;
+    float color3 = 0.75 * d3 * d3;
 
     pixels[i] = CRGB((int)color1, (int)color2, (int)color3);
   }
 
   FastLED.show();
+  holdFrame(0.75);
 }
 
 
+/* == VUMOVER == */
+float vumoverAngle = 0;
+float VUMOVER_ANGLE_SWEEP = 0.3;
+int vumoverHue1;
+int vumoverHue2;
 
+void vumoverSetup() {
+  vumoverHue1 = random(0, 255);
+  vumoverHue2 = random(0, 255);
+}
 
-/* == PAPARAZZI == */
-const int PAPARAZZI_FRAME_HOLD = 20; // ms
-
-void paparazzi() {
-  // clear leds
+void vuMover() {
+  // clear frame
   fill_solid(&(pixels[0]), PIXEL_COUNT, CRGB(0, 0, 0));
 
-  // pick random leds
-  for (int i = 0; i < 8; i++){
-    int randomNum = random(0, PIXEL_COUNT);
-    setPixel(randomNum, 0xff, 0xff, 0xff);
-  }
-
-  FastLED.show();
-  delay(PAPARAZZI_FRAME_HOLD);
-}
-
-/* == TAKEOFF == */
-void takeOff() {
-  // acceleration!?
-  panBar(1, 0, PIXEL_COUNT);
-  // panBar(1, 0, NUM_LEDS, 2);
-  // panBar(2, 0, NUM_LEDS, 3);
-  // panBar(2, 0, NUM_LEDS, 4);
-  // panBar(4, 0, NUM_LEDS, 5);
-  // panBar(4, 0, NUM_LEDS, 6);
-  // panBar(8, 0, NUM_LEDS, 7);
-  // panBar(8, 0, NUM_LEDS, 8);
-  // panBar(16, 0, NUM_LEDS, 9);
-  // panBar(16, 0, NUM_LEDS, 10);
-  // panBar(16, 0, NUM_LEDS, 10);
-  // panBar(16, 0, NUM_LEDS, 15);
-  // panBar(16, 0, NUM_LEDS, 15);
-  // panBar(16, 0, NUM_LEDS, 15);
-  // panBar(1, NUM_LEDS, 0);
-}
-
-void panBar(int barWidth, int start, int finish){
-  if (start < finish) {
-    // up
-    for(int i = start; i < finish; i++) {
-      drawBar(barWidth, i);
-    }
-  } else {
-    // down
-    for(int i = start; i > finish; i--) {
-      drawBar(barWidth, i);
-    }
-  }
-}
-
-void drawBar(int barWidth, int start) {
-
-  // turn off all leds
-  // for (int k=0; k < NUM_LEDS; k++){
-  //   setPixel(k, 0x00, 0x00, 0x00);
-  // }
-  //
-  // // draw bar
-  // for (int i=start; i < start + barWidth; i++){
-  //   setPixel(i, 0x00, 0xff, 0xff);
-  // }
-
-  FastLED.show();
-}
-
-
-/* == PANBARFULL == */
-const int PANBARFULL_BAR_WIDTH = 4;
-const int PANBARFULL_FRAME_HOLD = 20;
-
-void panBarFull() {
-  float barWidth = PANBARFULL_BAR_WIDTH;
-
-  for (int k = 0; k < PIXEL_COUNT + barWidth; k = k + 1) {
-    setPixel(k, 0xff, 0xff, 0xff);
-    FastLED.show();
-    for (int i = 0; i < barWidth; i++){
-      setPixel(k-barWidth, 0x00, 0x00, 0x00);
-    }
-
-    delay(PANBARFULL_FRAME_HOLD);
-  }
-
-  for (int k = PIXEL_COUNT; k > 0 - barWidth; k = k - 1) {
-    setPixel(k, 0xff, 0xff, 0xff);
-    FastLED.show();
-    setPixel(k+barWidth, 0x00, 0x00, 0x00);
-
-    delay(PANBARFULL_FRAME_HOLD);
-  }
-}
-
-
-
-
-
-
-
-
-
-/* == VU METER == */
-void vuMeter() {
-  int peak = audioRMS * PIXEL_COUNT; // RMS = 0 - 1
+  // wave 1 - sine
+  float angle = vumoverAngle;
+  float bri;
   for (int i = 0; i < PIXEL_COUNT; i++) {
-    int hue = ((float)i / (float)PIXEL_COUNT) * 255.0;
-    pixels[i] = CHSV(hue, 255, i < peak ? 255 : 0); // turn on pixels below mapped peak
+    bri = map(sin(angle), -1.0, 1.0, 0.0, 200.0);
+    pixels[i] += CHSV(0, 128+bri*0.5, bri); // additive
+    angle -= VUMOVER_ANGLE_SWEEP;
   }
+
+  // wave 2 - sine with PI/2 phase angle
+  angle = vumoverAngle + PI/2.0;
+  for (int i = 0; i < PIXEL_COUNT; i++) {
+    bri = map(sin(angle), -1.0, 1.0, 0.0, 200.0);
+    pixels[i] += CHSV(128, 128+bri*0.5, bri); // additive
+    angle += VUMOVER_ANGLE_SWEEP; // sweep opposite direction
+  }
+
+  FastLED.show();
+  holdFrame();
+
+  vumoverAngle += 0.1 + 0.35 * audioRMS;
 }
 
 
-/* == RAINBOW CYCLE == */
+/* == RAINBOW CYCLE (test) == */
 void rainbowCycle() {
-  float angle = (elapsed / 20) % 255; // offset starting angle over time
+  float angle = (elapsed / 2) % 255; // offset starting angle over time
   float angleStep = 255 / PIXEL_COUNT; // show whole color wheel across strip
   for (int i = 0; i < PIXEL_COUNT; i++){
     pixels[i] = CHSV(angle, 255, 255);
@@ -652,20 +825,19 @@ void rainbowCycle() {
   }
 
   FastLED.show();
+  holdFrame();
 }
-
-
 
 
 // === MODES ===
 void setMode(int newMode) {
   controlMode = newMode;
   if (controlMode == 0) {
-    // BLUE mode - select animation
-    ringcoder.setEncoderRange(ANIMATION_COUNT);
-    ringcoder.writeEncoder(currentAnimationIdx);
-    ringcoder.ledRingFollower();
-    currentAnimationIdx == 0 ? ringcoder.setKnobRgb(255, 255, 255) : ringcoder.setKnobRgb(0, 0, 255);
+    // BLUE mode - animation speed multiplier
+    ringcoder.setEncoderRange(32);
+    ringcoder.writeEncoder(map(animationSpeedMultiplier, 0.25, 2.0, 0, 31));
+    ringcoder.ledRingFiller();
+    ringcoder.setKnobRgb(0, 0, 255);
   }
   else if (controlMode == 1) {
     // GREEN mode - select brightness
@@ -677,9 +849,9 @@ void setMode(int newMode) {
     ringcoder.setKnobRgb(0, 255, 0);
   }
   else if (controlMode == 2) {
-    // RED mode - select FFT gain
-    ringcoder.setEncoderRange(FFT_GAIN_MAX - FFT_GAIN_MIN);
-    ringcoder.writeEncoder(fftGain);
+    // RED mode - select audio gain
+    ringcoder.setEncoderRange(AUDIO_GAIN_MAX - AUDIO_GAIN_MIN);
+    ringcoder.writeEncoder(audioGain);
     ringcoder.ledRingFiller();
     ringcoder.setKnobRgb(255, 0, 0);
   }
@@ -687,11 +859,8 @@ void setMode(int newMode) {
 
 void updateModeDisplay(u_int newValue) {
   if (controlMode == 0) {
-    if (currentAnimationIdx != (int)newValue) {
-      switchAnimation(newValue);
-    }
-    ringcoder.ledRingFollower();
-    currentAnimationIdx == 0 ? ringcoder.setKnobRgb(255, 255, 255) : ringcoder.setKnobRgb(0, 0, 255);
+    animationSpeedMultiplier = map(newValue, 0, 32, 0.25, 2.0);
+    ringcoder.ledRingFiller();
   }
   else if (controlMode == 1) {
     brightness = newValue * 4; // skipping every 4th value
@@ -700,7 +869,7 @@ void updateModeDisplay(u_int newValue) {
     ringcoder.ledRingFiller();
   }
   else if (controlMode == 2) {
-    fftGain = newValue + FFT_GAIN_MIN;
+    audioGain = newValue + AUDIO_GAIN_MIN;
     ringcoder.ledRingFiller();
   }
 }
