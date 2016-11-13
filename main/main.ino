@@ -243,12 +243,12 @@ void runCurrentAnimation() {
         bounceball();
       break;
     case PLASMA:
-      for(; loop < 600; ++loop)
+      for(; loop < 300; ++loop)
         plasma();
       break;
     case VUMOVER:
       vumoverSetup();
-      for(; loop < 600; ++loop)
+      for(; loop < 400; ++loop)
         vuMover();
       break;
 
